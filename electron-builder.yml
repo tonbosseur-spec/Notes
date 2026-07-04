@@ -1,0 +1,13 @@
+appId: com.notescopilot.app
+productName: Notes
+directories:
+  output: dist-electron
+  app: .
+files:
+  - dist/**/*
+  - main.js
+  - package.json
+win:
+  target:
+    - portable
+  icon: public/favicon.ico

@@ -1,0 +1,6 @@
+{
+  "appId": "com.notescopilot.app",
+  "appName": "Notes",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

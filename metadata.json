@@ -1,0 +1,6 @@
+{
+  "name": "Application de Notes",
+  "description": "Une application PWA de prise de notes hors-ligne avec texte riche et support IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
