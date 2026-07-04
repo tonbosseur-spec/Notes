@@ -1,12 +1,33 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
+import { 
+  getOrCreateUser, 
+  getUserNotes, 
+  saveNote, 
+  deleteNote, 
+  getUserGroups, 
+  saveGroup, 
+  deleteGroup, 
+  getUserTasks, 
+  saveTask, 
+  deleteTask, 
+  getUserTaskLists, 
+  saveTaskList, 
+  deleteTaskList 
+} from "./src/db/queries.ts";
 
 dotenv.config();
 
 const app = express();
+app.use(cors({
+  origin: [/localhost/, /\.google\.com$/, /\.run\.app$/],
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' })); // Increase limit for notes data
 
 const PORT = 3000;
@@ -312,7 +333,7 @@ Tes capacités :
                 required: ["assignments"]
               }
             },
-             {
+            {
               name: "renameNote",
               description: "Renomme le titre d'une note existante.",
               parameters: {
@@ -469,6 +490,130 @@ Tes capacités :
   }
 });
 
+// --- Database API Routes ---
+
+// Auth sync endpoint
+app.post("/api/auth/sync", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { email, firstName, lastName, photoUrl } = req.body;
+    const user = await getOrCreateUser(req.user!.uid, email, firstName, lastName, photoUrl);
+    res.json(user);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Notes endpoints
+app.get("/api/notes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const notes = await getUserNotes(req.user!.uid);
+    res.json(notes);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/notes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const note = await saveNote(req.user!.uid, req.body);
+    res.json(note[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/notes/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await deleteNote(req.user!.uid, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Groups endpoints
+app.get("/api/groups", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const groups = await getUserGroups(req.user!.uid);
+    res.json(groups);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/groups", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const group = await saveGroup(req.user!.uid, req.body);
+    res.json(group[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/groups/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await deleteGroup(req.user!.uid, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Tasks endpoints
+app.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const tasks = await getUserTasks(req.user!.uid);
+    res.json(tasks);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const task = await saveTask(req.user!.uid, req.body);
+    res.json(task[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/tasks/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await deleteTask(req.user!.uid, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TaskLists endpoints
+app.get("/api/task-lists", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const lists = await getUserTaskLists(req.user!.uid);
+    res.json(lists);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/task-lists", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const list = await saveTaskList(req.user!.uid, req.body);
+    res.json(list[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/task-lists/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await deleteTaskList(req.user!.uid, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // API 404 handler
 app.all("/api/*", (req, res) => {

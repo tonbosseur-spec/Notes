@@ -1,107 +1,197 @@
-import { db } from './firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  onSnapshot, 
-  getDocs 
-} from 'firebase/firestore';
+import { auth } from './firebase';
 import { Note, NoteGroup, Task, TaskList, UserProfile } from '../types';
 
-// Helper to save user profile to cloud
+async function getAuthHeader() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+}
+
+// User Profile Sync
 export async function saveProfileToCloud(userId: string, profile: UserProfile) {
   try {
-    await setDoc(doc(db, 'users', userId, 'profile', 'info'), profile);
+    const headers = await getAuthHeader();
+    await fetch('/api/auth/sync', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: auth.currentUser?.email,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        photoUrl: profile.photoUrl
+      })
+    });
   } catch (err) {
     console.error('Error saving profile to cloud:', err);
   }
 }
 
+// Notes Sync
+export async function fetchNotesFromCloud() {
+  try {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/notes', { headers });
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching notes:', err);
+    return [];
+  }
+}
 
-// Helper to write a single note to Firestore
 export async function saveNoteToCloud(userId: string, note: Note) {
   try {
-    const sanitized = JSON.parse(JSON.stringify(note));
-    await setDoc(doc(db, 'users', userId, 'notes', note.id), sanitized);
+    const headers = await getAuthHeader();
+    await fetch('/api/notes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(note)
+    });
   } catch (err) {
     console.error('Error saving note to cloud:', err);
   }
 }
 
-// Helper to delete a single note from Firestore
 export async function deleteNoteFromCloud(userId: string, noteId: string) {
   try {
-    await deleteDoc(doc(db, 'users', userId, 'notes', noteId));
+    const headers = await getAuthHeader();
+    await fetch(`/api/notes/${noteId}`, {
+      method: 'DELETE',
+      headers
+    });
   } catch (err) {
     console.error('Error deleting note from cloud:', err);
   }
 }
 
-// Helper to write a single group to Firestore
+// Groups Sync
+export async function fetchGroupsFromCloud() {
+  try {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/groups', { headers });
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching groups:', err);
+    return [];
+  }
+}
+
 export async function saveGroupToCloud(userId: string, group: NoteGroup) {
   try {
-    const sanitized = JSON.parse(JSON.stringify(group));
-    await setDoc(doc(db, 'users', userId, 'groups', group.id), sanitized);
+    const headers = await getAuthHeader();
+    await fetch('/api/groups', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(group)
+    });
   } catch (err) {
     console.error('Error saving group to cloud:', err);
   }
 }
 
-// Helper to delete a single group from Firestore
 export async function deleteGroupFromCloud(userId: string, groupId: string) {
   try {
-    await deleteDoc(doc(db, 'users', userId, 'groups', groupId));
+    const headers = await getAuthHeader();
+    await fetch(`/api/groups/${groupId}`, {
+      method: 'DELETE',
+      headers
+    });
   } catch (err) {
     console.error('Error deleting group from cloud:', err);
   }
 }
 
-// Helper to write a single task to Firestore
+// Tasks Sync
+export async function fetchTasksFromCloud() {
+  try {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/tasks', { headers });
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching tasks:', err);
+    return [];
+  }
+}
+
 export async function saveTaskToCloud(userId: string, task: Task) {
   try {
-    const sanitized = JSON.parse(JSON.stringify(task));
-    await setDoc(doc(db, 'users', userId, 'tasks', task.id), sanitized);
+    const headers = await getAuthHeader();
+    await fetch('/api/tasks', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(task)
+    });
   } catch (err) {
     console.error('Error saving task to cloud:', err);
   }
 }
 
-// Helper to delete a single task from Firestore
 export async function deleteTaskFromCloud(userId: string, taskId: string) {
   try {
-    await deleteDoc(doc(db, 'users', userId, 'tasks', taskId));
+    const headers = await getAuthHeader();
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'DELETE',
+      headers
+    });
   } catch (err) {
     console.error('Error deleting task from cloud:', err);
   }
 }
 
-// Helper to write a single task list to Firestore
+// Task Lists Sync
+export async function fetchTaskListsFromCloud() {
+  try {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/task-lists', { headers });
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching task lists:', err);
+    return [];
+  }
+}
+
 export async function saveTaskListToCloud(userId: string, list: TaskList) {
   try {
-    const sanitized = JSON.parse(JSON.stringify(list));
-    await setDoc(doc(db, 'users', userId, 'taskLists', list.id), sanitized);
+    const headers = await getAuthHeader();
+    await fetch('/api/task-lists', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(list)
+    });
   } catch (err) {
     console.error('Error saving task list to cloud:', err);
   }
 }
 
-// Helper to delete a single task list from Firestore
 export async function deleteTaskListFromCloud(userId: string, listId: string) {
   try {
-    await deleteDoc(doc(db, 'users', userId, 'taskLists', listId));
+    const headers = await getAuthHeader();
+    await fetch(`/api/task-lists/${listId}`, {
+      method: 'DELETE',
+      headers
+    });
   } catch (err) {
     console.error('Error deleting task list from cloud:', err);
   }
 }
 
-// Merge function to resolve conflicts (taking the newest updatedAt/createdAt)
-export function mergeLocalAndCloud<T extends { id: string; updatedAt?: number; createdAt?: number }>(
+// Merge function to resolve conflicts
+export function mergeLocalAndCloud<T extends { id: string; updatedAt?: number | string | Date; createdAt?: number | string | Date }>(
   localItems: T[],
   cloudItems: T[]
 ): { merged: T[]; toUpload: T[] } {
   const mergedMap = new Map<string, T>();
   const toUpload: T[] = [];
+
+  const getTime = (val: any) => {
+    if (!val) return 0;
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === 'string') return new Date(val).getTime();
+    return val;
+  };
 
   // Index local items
   localItems.forEach(item => {
@@ -112,18 +202,14 @@ export function mergeLocalAndCloud<T extends { id: string; updatedAt?: number; c
   cloudItems.forEach(cloudItem => {
     const localItem = mergedMap.get(cloudItem.id);
     if (!localItem) {
-      // Exist only on cloud, add to merged
       mergedMap.set(cloudItem.id, cloudItem);
     } else {
-      // Exists in both, compare timestamps
-      const localTime = localItem.updatedAt || localItem.createdAt || 0;
-      const cloudTime = cloudItem.updatedAt || cloudItem.createdAt || 0;
+      const localTime = getTime(localItem.updatedAt || localItem.createdAt);
+      const cloudTime = getTime(cloudItem.updatedAt || cloudItem.createdAt);
 
       if (cloudTime >= localTime) {
-        // Cloud is newer or same
         mergedMap.set(cloudItem.id, cloudItem);
       } else {
-        // Local is newer, upload to cloud
         toUpload.push(localItem);
       }
     }
@@ -157,9 +243,7 @@ export function exportToNts(data: {
     ...data
   }, null, 2);
   
-  // Encrypt or encode in base64 to make it a custom private format
   const encoded = btoa(unescape(encodeURIComponent(jsonString)));
-  
   const blob = new Blob([encoded], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

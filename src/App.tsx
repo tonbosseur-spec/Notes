@@ -18,9 +18,8 @@ import TasksView from './components/TasksView';
 import LoginScreen from './components/LoginScreen';
 import FirstTimeProfileModal from './components/FirstTimeProfileModal';
 import { get, set } from 'idb-keyval';
-import { auth, db } from './lib/firebase';
+import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, onSnapshot, getDocs, doc, getDoc } from 'firebase/firestore';
 import { 
   saveNoteToCloud, 
   deleteNoteFromCloud, 
@@ -32,7 +31,11 @@ import {
   deleteTaskListFromCloud, 
   mergeLocalAndCloud,
   exportToNts,
-  saveProfileToCloud
+  saveProfileToCloud,
+  fetchNotesFromCloud,
+  fetchGroupsFromCloud,
+  fetchTasksFromCloud,
+  fetchTaskListsFromCloud
 } from './lib/sync';
 
 type ViewState = 'home' | 'notes' | 'settings' | 'tasks';
@@ -167,7 +170,7 @@ export default function App() {
     }
   }, [settings.theme, settings.colorPalette]);
 
-  // Firebase Authentication State Listener & Live Sync
+  // Firebase Authentication State Listener & Sync
   useEffect(() => {
     if (isLoading) return;
 
@@ -175,7 +178,6 @@ export default function App() {
       setCurrentUser(user);
 
       if (user) {
-        // Automatically ensure setting matches cloud auth state
         if (settings.authChoice !== 'cloud') {
           setSettings(prev => ({ ...prev, authChoice: 'cloud' }));
         }
@@ -198,41 +200,16 @@ export default function App() {
           setUserProfile(googleProfile);
           set('userProfile', googleProfile);
           await saveProfileToCloud(user.uid, googleProfile);
-        } else {
-          try {
-            const profileSnap = await getDoc(doc(db, 'users', user.uid, 'profile', 'info'));
-            if (profileSnap.exists()) {
-              const cloudProfile = profileSnap.data() as UserProfile;
-              setUserProfile(cloudProfile);
-              set('userProfile', cloudProfile);
-            } else {
-              const localProfile = await get('userProfile');
-              if (localProfile) {
-                const updatedProfile = { ...localProfile, isGoogle: false };
-                setUserProfile(updatedProfile);
-                await saveProfileToCloud(user.uid, updatedProfile);
-              } else {
-                setUserProfile(null);
-              }
-            }
-          } catch (err) {
-            console.error("Failed to load user profile:", err);
-          }
         }
 
         try {
-          // 1. Fetch initial remote data for a quick merge on login
-          const [notesSnap, groupsSnap, tasksSnap, taskListsSnap] = await Promise.all([
-            getDocs(collection(db, 'users', user.uid, 'notes')),
-            getDocs(collection(db, 'users', user.uid, 'groups')),
-            getDocs(collection(db, 'users', user.uid, 'tasks')),
-            getDocs(collection(db, 'users', user.uid, 'taskLists'))
+          // Fetch initial remote data from Cloud SQL API
+          const [remoteNotes, remoteGroups, remoteTasks, remoteTaskLists] = await Promise.all([
+            fetchNotesFromCloud(),
+            fetchGroupsFromCloud(),
+            fetchTasksFromCloud(),
+            fetchTaskListsFromCloud()
           ]);
-
-          const remoteNotes = notesSnap.docs.map(d => d.data() as Note);
-          const remoteGroups = groupsSnap.docs.map(d => d.data() as NoteGroup);
-          const remoteTasks = tasksSnap.docs.map(d => d.data() as Task);
-          const remoteTaskLists = taskListsSnap.docs.map(d => d.data() as TaskList);
 
           // Merge local and remote
           const mergedNotes = mergeLocalAndCloud(notes, remoteNotes);
@@ -240,7 +217,7 @@ export default function App() {
           const mergedTasks = mergeLocalAndCloud(tasks, remoteTasks);
           const mergedTaskLists = mergeLocalAndCloud(taskLists, remoteTaskLists);
 
-          // Update local state with merged contents
+          // Update local state
           setNotes(mergedNotes.merged);
           setGroups(mergedGroups.merged);
           setTasks(mergedTasks.merged);
@@ -259,82 +236,7 @@ export default function App() {
         } catch (err) {
           console.error("Error during initial Cloud synchronization:", err);
         }
-
-        // 2. Set up real-time listener subscriptions
-        const unsubNotes = onSnapshot(collection(db, 'users', user.uid, 'notes'), (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            const docData = change.doc.data() as Note;
-            if (change.type === 'added' || change.type === 'modified') {
-              setNotes(prev => {
-                const existing = prev.find(n => n.id === docData.id);
-                if (!existing || docData.updatedAt > (existing.updatedAt || 0)) {
-                  const filtered = prev.filter(n => n.id !== docData.id);
-                  return [docData, ...filtered];
-                }
-                return prev;
-              });
-            } else if (change.type === 'removed') {
-              setNotes(prev => prev.filter(n => n.id !== change.doc.id));
-            }
-          });
-        });
-
-        const unsubGroups = onSnapshot(collection(db, 'users', user.uid, 'groups'), (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            const docData = change.doc.data() as NoteGroup;
-            if (change.type === 'added' || change.type === 'modified') {
-              setGroups(prev => {
-                const existing = prev.find(g => g.id === docData.id);
-                if (!existing) return [...prev, docData];
-                return prev.map(g => g.id === docData.id ? docData : g);
-              });
-            } else if (change.type === 'removed') {
-              setGroups(prev => prev.filter(g => g.id !== change.doc.id));
-            }
-          });
-        });
-
-        const unsubTasks = onSnapshot(collection(db, 'users', user.uid, 'tasks'), (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            const docData = change.doc.data() as Task;
-            if (change.type === 'added' || change.type === 'modified') {
-              setTasks(prev => {
-                const existing = prev.find(t => t.id === docData.id);
-                if (!existing || docData.updatedAt > (existing.updatedAt || 0)) {
-                  const filtered = prev.filter(t => t.id !== docData.id);
-                  return [...filtered, docData];
-                }
-                return prev;
-              });
-            } else if (change.type === 'removed') {
-              setTasks(prev => prev.filter(t => t.id !== change.doc.id));
-            }
-          });
-        });
-
-        const unsubTaskLists = onSnapshot(collection(db, 'users', user.uid, 'taskLists'), (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            const docData = change.doc.data() as TaskList;
-            if (change.type === 'added' || change.type === 'modified') {
-              setTaskLists(prev => {
-                const existing = prev.find(l => l.id === docData.id);
-                if (!existing) return [...prev, docData];
-                return prev.map(l => l.id === docData.id ? docData : l);
-              });
-            } else if (change.type === 'removed') {
-              setTaskLists(prev => prev.filter(l => l.id !== change.doc.id));
-            }
-          });
-        });
-
-        return () => {
-          unsubNotes();
-          unsubGroups();
-          unsubTasks();
-          unsubTaskLists();
-        };
       } else {
-        // Logged out
         if (settings.authChoice === 'cloud') {
           setSettings(prev => ({ ...prev, authChoice: null }));
         }
