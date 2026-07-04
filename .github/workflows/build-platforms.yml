@@ -105,6 +105,22 @@ jobs:
           npx cap init Notes com.notescopilot.app --web-dir=dist
           npx cap add android
 
+      - name: Fix Kotlin Duplicate Classes Conflict
+        run: |
+          node -e '
+          const fs = require("fs");
+          const file = "android/app/build.gradle";
+          if (fs.existsSync(file)) {
+            let content = fs.readFileSync(file, "utf8");
+            content += "\n\nconfigurations.all {\n    exclude group: \"org.jetbrains.kotlin\", module: \"kotlin-stdlib-jdk7\"\n    exclude group: \"org.jetbrains.kotlin\", module: \"kotlin-stdlib-jdk8\"\n}\n";
+            fs.writeFileSync(file, content, "utf8");
+            console.log("Successfully patched app/build.gradle to resolve duplicate Kotlin classes");
+          } else {
+            console.error("Error: android/app/build.gradle not found");
+            process.exit(1);
+          }
+          '
+
       - name: Sync Capacitor
         run: npx cap sync
 
