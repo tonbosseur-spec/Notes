@@ -1,4 +1,4 @@
-import { Plus, Search, Folder, ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
+import { Plus, Search, Folder, ChevronDown, ChevronRight, GripVertical, Lock } from 'lucide-react';
 import { useState } from 'react';
 import { Note, NoteGroup } from '../types';
 
@@ -20,16 +20,22 @@ export default function Sidebar({
   onUpdateNotes
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   
-  // Drag and drop states for notes
+  // Extract unique tags
+  const allTags = Array.from(new Set(notes.map(n => n.tag).filter(Boolean))) as string[];
+
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
 
   const filteredNotes = notes.filter(note => {
     const query = searchQuery.toLowerCase();
-    return note.title.toLowerCase().includes(query) || note.content.toLowerCase().includes(query);
+    const tagMatch = note.tag ? note.tag.toLowerCase().includes(query) : false;
+    const matchesSearch = note.title.toLowerCase().includes(query) || note.content.toLowerCase().includes(query) || tagMatch;
+    const matchesTag = selectedTag ? note.tag === selectedTag : true;
+    return matchesSearch && matchesTag;
   });
 
   const ungroupedNotes = filteredNotes.filter(n => !n.groupId);
@@ -173,11 +179,21 @@ export default function Sidebar({
             : 'hover:bg-stone-200/30 dark:hover:bg-stone-800/30 border border-transparent'
           }`}
       >
-        <span className={`font-medium text-sm truncate ${activeNoteId === note.id ? 'text-stone-900 dark:text-stone-100' : 'text-stone-700 dark:text-stone-300'}`}>
-          {note.title || 'Nouvelle note'}
-        </span>
-        <span className="text-xs text-stone-400 dark:text-stone-500 truncate">
-          {note.content.replace(/<[^>]*>?/gm, '').substring(0, 40) || 'Pas de contenu...'}
+        <div className="flex items-center gap-2">
+          {note.isLocked && <Lock className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+          <span className={`font-medium text-sm truncate flex-1 ${activeNoteId === note.id ? 'text-stone-900 dark:text-stone-100' : 'text-stone-700 dark:text-stone-300'}`}>
+            {note.title || 'Nouvelle note'}
+          </span>
+          {note.tag && (
+            <span className="text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/50 shrink-0">
+              {note.tag}
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-stone-400 dark:text-stone-500 truncate italic">
+          {note.isLocked 
+            ? 'Contenu verrouillé...' 
+            : (note.content.replace(/<[^>]*>?/gm, '').substring(0, 40) || 'Pas de contenu...')}
         </span>
       </button>
       <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none cursor-grab active:cursor-grabbing text-stone-400">
@@ -214,7 +230,7 @@ export default function Sidebar({
         </div>
       </div>
       
-      <div className="p-3">
+      <div className="p-3 space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input 
@@ -225,6 +241,34 @@ export default function Sidebar({
             className="w-full bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 focus:border-stone-400 dark:focus:border-stone-600 transition-shadow text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500"
           />
         </div>
+
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-1">
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all ${
+                selectedTag === null 
+                  ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100' 
+                  : 'bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-800 hover:border-stone-400'
+              }`}
+            >
+              Tous
+            </button>
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all ${
+                  selectedTag === tag 
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                    : 'bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-4 no-scrollbar">

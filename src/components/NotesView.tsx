@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Bot, FileText, Folder, PenTool, Plus, ChevronRight, Activity, Calendar, Home as HomeIcon } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, Folder, PenTool, Plus, ChevronRight, Activity, Calendar, Home as HomeIcon, Tag, Lock } from 'lucide-react';
 import { Note, NoteGroup, UserProfile } from '../types';
 import Sidebar from './Sidebar';
 import Editor from './Editor';
@@ -64,6 +64,15 @@ export default function NotesView({
       percentage: totalNotes > 0 ? Math.round((count / totalNotes) * 100) : 0
     };
   }).filter(g => g.count > 0);
+
+  const tagStats = Array.from(new Set(notes.map(n => n.tag).filter(Boolean))).map(tag => {
+    const count = notes.filter(n => n.tag === tag).length;
+    return {
+      name: tag as string,
+      count,
+      percentage: totalNotes > 0 ? Math.round((count / totalNotes) * 100) : 0
+    };
+  });
 
   const ungroupedCount = notes.filter(n => !n.groupId).length;
 
@@ -271,7 +280,7 @@ export default function NotesView({
                 </div>
 
                 {/* Grid Section for Recent Notes and Folders */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Column 1: Recent Notes */}
                   <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-6 shadow-xs space-y-4">
                     <h3 className="text-base font-bold text-stone-900 dark:text-stone-50 flex items-center gap-2">
@@ -289,12 +298,20 @@ export default function NotesView({
                             className="w-full text-left p-3 border border-stone-100 dark:border-stone-800 rounded-xl hover:bg-stone-50 dark:hover:bg-stone-800/40 transition-colors flex items-center justify-between group"
                           >
                             <div className="min-w-0 pr-4">
-                              <h4 className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              <h4 className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                                {note.isLocked && <Lock className="w-3 h-3 text-amber-500" />}
                                 {note.title || 'Nouvelle note'}
                               </h4>
-                              <p className="text-[11px] text-stone-400 dark:text-stone-500 truncate mt-0.5">
-                                Modifié le {new Date(note.updatedAt).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <p className="text-[11px] text-stone-400 dark:text-stone-500 truncate">
+                                  {new Date(note.updatedAt).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                                {note.tag && (
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-800/50">
+                                    {note.tag}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <ChevronRight className="w-4 h-4 text-stone-400 group-hover:text-indigo-500 transition-colors shrink-0" />
                           </button>
@@ -343,6 +360,34 @@ export default function NotesView({
                             </div>
                           </div>
                         )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 3: Répartition par catégorie (Tags) */}
+                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-6 shadow-xs space-y-4">
+                    <h3 className="text-base font-bold text-stone-900 dark:text-stone-50 flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-emerald-500" />
+                      Répartition par catégorie
+                    </h3>
+                    {tagStats.length === 0 ? (
+                      <p className="text-sm text-stone-500 dark:text-stone-400 py-4 text-center">Aucune catégorie définie.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {tagStats.map(stat => (
+                          <div key={stat.name} className="space-y-1.5">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-semibold text-stone-700 dark:text-stone-300">{stat.name}</span>
+                              <span className="text-stone-400 dark:text-stone-500">{stat.count} note{stat.count > 1 ? 's' : ''} ({stat.percentage}%)</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-emerald-500 rounded-full"
+                                style={{ width: `${stat.percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

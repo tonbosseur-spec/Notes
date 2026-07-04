@@ -21,6 +21,9 @@ export interface Note {
   groupId?: string;
   linkedTaskId?: string;
   dueDate?: string;
+  tag?: string;
+  isLocked?: boolean;
+  password?: string;
 }
 
 export interface ChatThread {

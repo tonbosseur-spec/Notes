@@ -34,8 +34,11 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           onLoginSuccess(result.user.uid);
         }
       } catch (err: any) {
-        console.error(err);
-        setError("Erreur lors de la connexion via redirection.");
+        console.error("Redirect Result Error:", err);
+        // Don't show error immediately as getRedirectResult can fire on normal loads
+        if (err.code && err.code !== 'auth/no-recent-login') {
+          setError(`Erreur redirection (${err.code}) : ${err.message}`);
+        }
       }
     };
     checkRedirect();
@@ -52,19 +55,25 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         onLoginSuccess(result.user.uid);
       }
     } catch (err: any) {
-      console.error("Google Auth Error:", err);
+      console.error("Google Auth Popup Error Details:", {
+        code: err.code,
+        message: err.message,
+        customData: err.customData,
+        email: err.customData?.email
+      });
       
       if (err.code === 'auth/popup-blocked') {
-        setError("La fenêtre de connexion Google a été bloquée. Veuillez autoriser les popups ou essayer de cliquer à nouveau. Si le problème persiste, utilisez la redirection ci-dessous.");
+        setError("La fenêtre de connexion Google a été bloquée. Veuillez autoriser les popups ou utiliser la connexion par 'Redirection' ci-dessous.");
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError("La connexion Google n'est pas activée dans la console Firebase. (Authentification > Sign-in method).");
+        setError("La connexion Google n'est pas activée dans votre console Firebase (Authentification > Sign-in method).");
       } else if (err.code === 'auth/web-storage-unsupported' || err.message?.includes('storage')) {
-        setError("Le stockage web ou les cookies tiers sont bloqués. Vous devez impérativement ouvrir l'application dans un NOUVEL ONGLET pour vous connecter.");
+        setError("Le stockage web/cookies tiers sont bloqués. Vous DEVEZ ouvrir l'application dans un NOUVEL ONGLET pour vous connecter.");
       } else if (err.code === 'auth/popup-closed-by-user') {
-        // Just reset loading
         setError(null);
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError(`Domaine non autorisé : ${window.location.hostname}. Ajoutez-le dans : Console Firebase > Authentification > Paramètres > Domaines autorisés.`);
       } else {
-        setError(`Erreur (${err.code || 'inconnue'}) : ${err.message || err}. Si vous êtes sur Android ou dans l'aperçu, essayez d'ouvrir dans un nouvel onglet.`);
+        setError(`Erreur Firebase (${err.code || 'inconnue'}) : ${err.message}. Assurez-vous que le domaine est autorisé et que Google Auth est activé.`);
       }
     } finally {
       setLoading(false);
@@ -77,8 +86,12 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     try {
       await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
-      console.error(err);
-      setError(`Erreur de redirection : ${err.message}`);
+      console.error("Google Auth Redirect Error:", err);
+      if (err.code === 'auth/unauthorized-domain') {
+        setError(`Domaine non autorisé : ${window.location.hostname}.`);
+      } else {
+        setError(`Erreur de redirection : ${err.message} (${err.code})`);
+      }
       setLoading(false);
     }
   };
@@ -147,14 +160,19 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         </div>
 
         {/* Warning about Iframe/Android limitations */}
-        {(isInIframe || isAndroid) && (
-          <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 rounded-2xl flex items-start gap-3 text-xs leading-relaxed animate-fadeIn">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-            <div>
-              <p className="font-bold mb-1">{isAndroid ? 'Astuce pour Android :' : 'Avis pour l\'aperçu :'}</p>
-              {isAndroid 
-                ? "Si la connexion échoue, essayez d'ouvrir l'application dans votre navigateur par défaut via le menu de votre téléphone."
-                : "La connexion peut être bloquée dans cet aperçu. Pour vous connecter, veuillez ouvrir l'application dans un nouvel onglet."}
+        {(isInIframe || isAndroid || error) && (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 rounded-2xl flex flex-col gap-2 text-xs leading-relaxed animate-fadeIn">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="font-bold mb-1">Guide de résolution :</p>
+                <ul className="list-disc pl-4 space-y-1 opacity-90">
+                  <li><b>Web :</b> Ouvrez l'application dans un <b>nouvel onglet</b> (bouton en haut à droite).</li>
+                  <li><b>Android (APK) :</b> Enregistrez le certificat <b>SHA-1</b> dans votre console Firebase.</li>
+                  <li><b>Firebase :</b> Vérifiez que <b>{window.location.hostname}</b> est dans les "Domaines autorisés".</li>
+                  <li><b>Activation :</b> Vérifiez que "Google" est activé dans "Sign-in methods".</li>
+                </ul>
+              </div>
             </div>
           </div>
         )}
@@ -163,7 +181,10 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <div className="space-y-3">
             <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-2xl flex items-start gap-3 text-xs animate-fadeIn text-left">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <div className="space-y-1">
+                <p className="font-bold">Erreur rencontrée :</p>
+                <p className="opacity-90 break-words">{error}</p>
+              </div>
             </div>
             
             {/* Fallback for redirection if popup fails */}

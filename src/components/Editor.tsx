@@ -16,7 +16,14 @@ import {
   Folder,
   Plus,
   Copy,
-  Scissors
+  Scissors,
+  Tag,
+  Calendar,
+  Lock,
+  Unlock,
+  Shield,
+  Key,
+  ShieldAlert
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -193,6 +200,11 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
   const [newGroupName, setNewGroupName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const [isSessionUnlocked, setIsSessionUnlocked] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [lockPassword, setLockPassword] = useState('');
+  const [isLockingModalOpen, setIsLockingModalOpen] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
   const currentNoteId = useRef(note.id);
 
   const editor = useEditor({
@@ -221,6 +233,9 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
       setIsCreatingGroup(false);
       setNewGroupName('');
       setHasSelection(false);
+      setIsSessionUnlocked(false);
+      setUnlockPassword('');
+      setLockError(null);
       currentNoteId.current = note.id;
       
       if (editor) {
@@ -241,6 +256,40 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
       onUpdate({ groupId: newId });
       setNewGroupName('');
       setIsCreatingGroup(false);
+    }
+  };
+
+  const handleUnlock = () => {
+    if (unlockPassword === note.password) {
+      setIsSessionUnlocked(true);
+      setLockError(null);
+    } else {
+      setLockError('Mot de passe incorrect');
+    }
+  };
+
+  const handleLock = () => {
+    if (!lockPassword) {
+      setLockError('Veuillez saisir un mot de passe');
+      return;
+    }
+    onUpdate({ 
+      isLocked: true, 
+      password: lockPassword 
+    });
+    setIsSessionUnlocked(true);
+    setIsLockingModalOpen(false);
+    setLockPassword('');
+    setLockError(null);
+  };
+
+  const handleToggleLock = () => {
+    if (note.isLocked) {
+      onUpdate({ isLocked: false, password: undefined });
+      setIsSessionUnlocked(false);
+    } else {
+      setLockError(null);
+      setIsLockingModalOpen(true);
     }
   };
 
@@ -394,13 +443,26 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
           {formatDate(note.updatedAt)}
         </span>
         
-        <div className="relative">
-          <button 
-            onClick={() => setShowMenu(!showMenu)}
-            className="p-1.5 text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-md transition-colors"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleToggleLock}
+            className={`p-1.5 rounded-md transition-all duration-300 ${
+              note.isLocked 
+                ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400' 
+                : 'text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800'
+            }`}
+            title={note.isLocked ? "Supprimer la protection" : "Protéger par mot de passe"}
           >
-            <MoreHorizontal className="w-5 h-5" />
+            {note.isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
           </button>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-1.5 text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-md transition-colors"
+            >
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
           
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl shadow-xl py-2 z-10">
@@ -465,21 +527,86 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
           )}
         </div>
       </div>
+    </div>
 
-      <input
-        type="text"
-        value={title}
-        onChange={handleTitleChange}
+    {(note.isLocked && !isSessionUnlocked) ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
+          <div className="w-20 h-20 bg-amber-100 dark:bg-amber-950/30 rounded-3xl flex items-center justify-center mb-6 animate-pulse shadow-sm">
+            <Lock className="w-10 h-10 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-stone-900 dark:text-stone-100 mb-2">Note Verrouillée</h2>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mb-8 max-w-xs leading-relaxed">
+            Cette note contient des informations sensibles et nécessite un mot de passe pour être consultée.
+          </p>
+          
+          <div className="w-full max-w-xs space-y-3">
+            <div className="relative group">
+              <Key className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-amber-500 transition-colors" />
+              <input
+                type="password"
+                value={unlockPassword}
+                onChange={(e) => setUnlockPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                placeholder="Mot de passe..."
+                className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all text-stone-900 dark:text-stone-100 shadow-sm"
+                autoFocus
+              />
+            </div>
+            
+            {lockError && (
+              <div className="flex items-center gap-2 text-[11px] font-medium text-red-500 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-xl border border-red-100 dark:border-red-900/30 animate-shake">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                {lockError}
+              </div>
+            )}
+            
+            <button
+              onClick={handleUnlock}
+              className="w-full bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 font-bold py-3.5 rounded-2xl hover:opacity-90 transition-all active:scale-[0.98] shadow-lg shadow-stone-900/10 dark:shadow-stone-100/5 mt-2"
+            >
+              Déverrouiller la note
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <input
+            type="text"
+            value={title}
+            onChange={handleTitleChange}
         placeholder="Titre de la note"
         className="text-3xl md:text-4xl font-semibold text-stone-900 dark:text-stone-100 bg-transparent border-none outline-none placeholder:text-stone-300 dark:placeholder:text-stone-600 mb-2"
       />
       
-      <input
-        type="date"
-        value={note.dueDate || ''}
-        onChange={(e) => onUpdate({ dueDate: e.target.value })}
-        className="text-sm text-stone-500 dark:text-stone-400 bg-transparent border border-stone-200 dark:border-stone-700 rounded-lg px-2 py-1 mb-4 w-fit"
-      />
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex items-center gap-2 px-2 py-1 bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg">
+              <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              <input
+                type="date"
+                value={note.dueDate || ''}
+                onChange={(e) => onUpdate({ dueDate: e.target.value })}
+                className="text-xs text-stone-600 dark:text-stone-300 bg-transparent border-none outline-none"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 px-2 py-1 bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg flex-1 min-w-[140px] max-w-[200px]">
+              <Tag className="w-3.5 h-3.5 text-stone-400" />
+              <input
+                type="text"
+                value={note.tag || ''}
+                onChange={(e) => onUpdate({ tag: e.target.value })}
+                placeholder="Catégorie..."
+                className="text-xs text-stone-600 dark:text-stone-300 bg-transparent border-none outline-none w-full placeholder:text-stone-300 dark:placeholder:text-stone-600"
+              />
+            </div>
+
+            {note.isLocked && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider animate-fadeIn">
+                <Shield className="w-3 h-3" />
+                Protégé
+              </div>
+            )}
+          </div>
       
       <MenuBar 
         editor={editor} 
@@ -564,18 +691,73 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         )}
         <EditorContent editor={editor} />
       </div>
+    </>
+  )}
 
-      <ConfirmModal
-        isOpen={showDeleteConfirm}
-        title="Supprimer la note"
-        message="Êtes-vous sûr de vouloir supprimer cette note ? Cette action est irréversible."
-        confirmText="Supprimer"
-        onConfirm={() => {
-          setShowDeleteConfirm(false);
-          onDelete();
-        }}
-        onCancel={() => setShowDeleteConfirm(false)}
-      />
-    </div>
-  );
+    {/* Lock Setup Modal */}
+    {isLockingModalOpen && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-stone-950/60 backdrop-blur-sm animate-fadeIn">
+        <div className="bg-white dark:bg-stone-900 w-full max-w-md rounded-3xl p-6 shadow-2xl border border-stone-200 dark:border-stone-800 animate-scaleIn">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-amber-100 dark:bg-amber-950/30 rounded-2xl flex items-center justify-center">
+              <Lock className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100">Protéger cette note</h3>
+              <p className="text-xs text-stone-500 dark:text-stone-400">Définissez un mot de passe pour verrouiller l'accès.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-stone-400 dark:text-stone-500 uppercase px-1">Nouveau mot de passe</label>
+              <div className="relative">
+                <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="password"
+                  value={lockPassword}
+                  onChange={(e) => setLockPassword(e.target.value)}
+                  placeholder="Saisissez un mot de passe..."
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 transition-all text-stone-900 dark:text-stone-100"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {lockError && (
+              <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 p-2 rounded-lg border border-red-100 dark:border-red-900/30">{lockError}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setIsLockingModalOpen(false)}
+                className="flex-1 py-3 text-sm font-bold text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleLock}
+                className="flex-1 py-3 text-sm font-bold bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 rounded-xl hover:opacity-90 transition-opacity"
+              >
+                Verrouiller
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    <ConfirmModal
+      isOpen={showDeleteConfirm}
+      title="Supprimer la note"
+      message="Êtes-vous sûr de vouloir supprimer cette note ? Cette action est irréversible."
+      confirmText="Supprimer"
+      onConfirm={() => {
+        setShowDeleteConfirm(false);
+        onDelete();
+      }}
+      onCancel={() => setShowDeleteConfirm(false)}
+    />
+  </div>
+);
 }
