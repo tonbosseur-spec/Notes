@@ -309,6 +309,40 @@ Tes capacités :
                 },
                 required: ["taskId"]
               }
+            },
+            {
+              name: "deleteTask",
+              description: "Supprime une tâche.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  taskId: { type: Type.STRING, description: "L'ID de la tâche à supprimer" }
+                },
+                required: ["taskId"]
+              }
+            },
+            {
+              name: "deleteTaskList",
+              description: "Supprime une liste de tâches.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  listId: { type: Type.STRING, description: "L'ID de la liste à supprimer" }
+                },
+                required: ["listId"]
+              }
+            },
+            {
+              name: "mergeLists",
+              description: "Fusionne deux listes de tâches.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  sourceListId: { type: Type.STRING, description: "L'ID de la liste à fusionner" },
+                  targetListId: { type: Type.STRING, description: "L'ID de la liste cible" }
+                },
+                required: ["sourceListId", "targetListId"]
+              }
             }
           ]
         }]

@@ -8,6 +8,7 @@ import { Loader2, Bell, Check, Clock, X } from 'lucide-react';
 import { StatusBar } from '@capacitor/status-bar';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { motion, AnimatePresence } from 'motion/react';
+import { generateUUID } from './lib/utils';
 import { Note, AppSettings, NoteGroup, ChatThread, Task, TaskList, UserProfile } from './types';
 import NotesView from './components/NotesView';
 import Home from './components/Home';
@@ -387,7 +388,7 @@ export default function App() {
   // State modifiers with Firestore backup triggers
   const handleCreateNote = () => {
     const newNote: Note = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title: '',
       content: '',
       createdAt: Date.now(),
@@ -407,7 +408,7 @@ export default function App() {
         const nextNote = { ...note, ...updates, updatedAt: Date.now() };
 
         if (updates.dueDate && !nextNote.linkedTaskId) {
-            const listId = taskLists.length > 0 ? taskLists[0].id : crypto.randomUUID();
+            const listId = taskLists.length > 0 ? taskLists[0].id : generateUUID();
             if (taskLists.length === 0) {
               const newList: TaskList = { id: listId, name: 'Tâches', createdAt: Date.now() };
               setTaskLists(prev => [...prev, newList]);
@@ -415,7 +416,7 @@ export default function App() {
             }
             
             const newTask: Task = {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 listId: listId,
                 title: `Tâche pour: ${nextNote.title}`,
                 details: '',
@@ -452,7 +453,7 @@ export default function App() {
   };
 
   const handleAddGroup = (name: string) => {
-    const newId = crypto.randomUUID();
+    const newId = generateUUID();
     const newGroup = { id: newId, name };
     setGroups([...groups, newGroup]);
     if (currentUser) {
@@ -475,7 +476,7 @@ export default function App() {
       if (groupName) {
         let group = newGroups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
         if (!group) {
-          const newGroup = { id: crypto.randomUUID(), name: groupName };
+          const newGroup = { id: generateUUID(), name: groupName };
           newGroups.push(newGroup);
           groupId = newGroup.id;
           if (currentUser) {
@@ -487,7 +488,7 @@ export default function App() {
       }
       
       setNotes(prevNotes => {
-        const newId = crypto.randomUUID();
+        const newId = generateUUID();
         const newNote = {
           id: newId,
           title,
@@ -519,7 +520,7 @@ export default function App() {
           if (!groupId) {
             let group = currentGroups.find(g => g.name.toLowerCase() === assignment.groupName.toLowerCase());
             if (!group) {
-              const newGroup = { id: crypto.randomUUID(), name: assignment.groupName };
+              const newGroup = { id: generateUUID(), name: assignment.groupName };
               currentGroups.push(newGroup);
               groupId = newGroup.id;
               if (currentUser) {
@@ -566,7 +567,7 @@ export default function App() {
     const newNotes = importedNotes.map(n => {
       const created = {
         ...n,
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -579,7 +580,7 @@ export default function App() {
   };
 
   const handleAddTaskList = (name: string, color?: string) => {
-    const newList: TaskList = { id: crypto.randomUUID(), name, color, createdAt: Date.now() };
+    const newList: TaskList = { id: generateUUID(), name, color, createdAt: Date.now() };
     setTaskLists(prev => [...prev, newList]);
     if (currentUser) {
       saveTaskListToCloud(currentUser.uid, newList);
@@ -595,7 +596,7 @@ export default function App() {
 
   const handleAddTask = (listId: string, title: string, priority: 'high' | 'medium' | 'low' = 'medium') => {
     const newTask: Task = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       listId,
       title,
       details: '',
@@ -619,7 +620,7 @@ export default function App() {
   const handleRudiCreateTask = (listName: string, title: string, dueDate?: string, priority: 'high' | 'medium' | 'low' = 'medium') => {
     let listId = taskLists.find(l => l.name.toLowerCase() === listName.toLowerCase())?.id;
     if (!listId) {
-      listId = crypto.randomUUID();
+      listId = generateUUID();
       const newList = { id: listId, name: listName, createdAt: Date.now() };
       setTaskLists(prev => [...prev, newList]);
       if (currentUser) {
@@ -627,7 +628,7 @@ export default function App() {
       }
     }
     const newTask: Task = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       listId: listId,
       title,
       details: '',
@@ -664,6 +665,27 @@ export default function App() {
     setTasks(prev => prev.filter(t => t.id !== id));
     if (currentUser) {
       deleteTaskFromCloud(currentUser.uid, id);
+    }
+  };
+
+  const handleDeleteTaskList = (listId: string) => {
+    setTaskLists(prev => prev.filter(l => l.id !== listId));
+    const tasksToDelete = tasks.filter(t => t.listId === listId);
+    setTasks(prev => prev.filter(t => t.listId !== listId));
+    if (currentUser) {
+      deleteTaskListFromCloud(currentUser.uid, listId);
+      tasksToDelete.forEach(t => deleteTaskFromCloud(currentUser.uid, t.id));
+    }
+  };
+
+  const handleMergeLists = (sourceListId: string, targetListId: string) => {
+    setTasks(prev => prev.map(t => t.listId === sourceListId ? { ...t, listId: targetListId } : t));
+    setTaskLists(prev => prev.filter(l => l.id !== sourceListId));
+    if (currentUser) {
+      deleteTaskListFromCloud(currentUser.uid, sourceListId);
+      tasks.filter(t => t.listId === sourceListId).forEach(t => {
+          saveTaskToCloud(currentUser.uid, { ...t, listId: targetListId });
+      });
     }
   };
 
@@ -896,6 +918,9 @@ export default function App() {
         userProfile={userProfile}
         onCreateTask={handleRudiCreateTask}
         onUpdateTask={handleUpdateTask}
+        onDeleteTask={handleDeleteTask}
+        onDeleteTaskList={handleDeleteTaskList}
+        onMergeLists={handleMergeLists}
       />
 
       {/* Floating Elegant Android-style Notification Stack */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Task, TaskList, SubTask } from '../types';
+import { generateUUID } from '../lib/utils';
 import { Plus, Check, Calendar, ChevronDown, ChevronRight, CheckCircle2, Circle, MoreVertical, Clock, X, Trash2, Home, Bot, CheckSquare, Menu, GripVertical } from 'lucide-react';
 
 interface TasksViewProps {
@@ -109,7 +110,7 @@ export default function TasksView({
   const handleAddSubTask = (taskId: string, title: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    const newSubTasks = [...task.subTasks, { id: crypto.randomUUID(), title, completed: false }];
+    const newSubTasks = [...task.subTasks, { id: generateUUID(), title, completed: false }];
     onUpdateTask(taskId, { subTasks: newSubTasks });
   };
 
@@ -518,7 +519,7 @@ function TaskItem({
           </div>
           {(task.dueDate || task.subTasks.length > 0) && (
             <div className="flex items-center gap-3 mt-1 text-xs text-stone-500">
-              {task.dueDate && (
+              {task.dueDate && !isNaN(new Date(task.dueDate).getTime()) && (
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" />
                   {new Date(task.dueDate).toLocaleString('fr-FR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}

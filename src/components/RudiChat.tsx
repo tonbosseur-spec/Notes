@@ -22,6 +22,9 @@ interface RudiChatProps {
   onModifyNote: (noteId: string, content: string) => void;
   onCreateTask?: (listName: string, title: string, dueDate?: string, priority?: 'high' | 'medium' | 'low') => void;
   onUpdateTask?: (taskId: string, updates: Partial<Task>) => void;
+  onDeleteTask?: (taskId: string) => void;
+  onDeleteTaskList?: (listId: string) => void;
+  onMergeLists?: (sourceListId: string, targetListId: string) => void;
   onAddTaskList?: (name: string) => string | void; // returns listId ideally, but we can manage inside App.tsx or here
 }
 
@@ -44,6 +47,9 @@ export default function RudiChat({
   onModifyNote,
   onCreateTask,
   onUpdateTask,
+  onDeleteTask,
+  onDeleteTaskList,
+  onMergeLists,
   onAddTaskList
 }: RudiChatProps) {
   const [input, setInput] = useState('');
@@ -171,6 +177,15 @@ export default function RudiChat({
                 ...(args.priority !== undefined ? { priority: args.priority } : {})
               });
               result = { success: true, message: `Tâche modifiée avec succès.` } as any;
+            } else if (name === 'deleteTask' && onDeleteTask) {
+              onDeleteTask(args.taskId);
+              result = { success: true, message: `Tâche supprimée avec succès.` } as any;
+            } else if (name === 'deleteTaskList' && onDeleteTaskList) {
+              onDeleteTaskList(args.listId);
+              result = { success: true, message: `Liste supprimée avec succès.` } as any;
+            } else if (name === 'mergeLists' && onMergeLists) {
+              onMergeLists(args.sourceListId, args.targetListId);
+              result = { success: true, message: `Listes fusionnées avec succès.` } as any;
             } else {
               result = { success: false, error: 'Unknown function' } as any;
             }

@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   auth, 
   googleProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../lib/firebase';
@@ -22,14 +24,34 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   // Check if we are running in an iframe (AI Studio preview iframe)
   const isInIframe = window.self !== window.top;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          onLoginSuccess(result.user.uid);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setError("Erreur lors de la connexion via redirection.");
+      }
+    };
+    checkRedirect();
+  }, [onLoginSuccess]);
 
   const handleGoogleSignIn = async () => {
     setError(null);
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        onLoginSuccess(result.user.uid);
+      if (isAndroid || isInIframe) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        const result = await signInWithPopup(auth, googleProvider);
+        if (result.user) {
+          onLoginSuccess(result.user.uid);
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -38,12 +60,18 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       } else if (err.code === 'auth/operation-not-allowed') {
         setError("La connexion Google n'est pas activée dans votre console Firebase. Veuillez l'activer dans : Console Firebase > Authentication > Sign-in method.");
       } else if (err.code === 'auth/web-storage-unsupported' || err.message?.includes('storage')) {
-        setError("Le stockage web/cookies tiers sont bloqués par votre navigateur dans cet iframe. Veuillez impérativement ouvrir l'application dans un NOUVEL ONGLET (bouton en haut à droite) pour vous connecter.");
+        setError(isAndroid 
+          ? "Le stockage est bloqué. Veuillez essayer d'ouvrir l'application dans votre navigateur par défaut."
+          : "Le stockage web/cookies tiers sont bloqués par votre navigateur dans cet iframe. Veuillez impérativement ouvrir l'application dans un NOUVEL ONGLET (bouton en haut à droite) pour vous connecter.");
       } else {
-        setError(`Erreur lors de la connexion Google : ${err.message || err} (Code: ${err.code || 'inconnu'}). Si vous êtes dans l'aperçu, ouvrez l'application dans un nouvel onglet.`);
+        setError(isAndroid
+          ? `Erreur de connexion : ${err.message || err}. Essayez d'ouvrir l'application dans votre navigateur principal.`
+          : `Erreur lors de la connexion Google : ${err.message || err} (Code: ${err.code || 'inconnu'}). Si vous êtes dans l'aperçu, ouvrez l'application dans un nouvel onglet.`);
       }
     } finally {
-      setLoading(false);
+      if (!isAndroid && !isInIframe) {
+        setLoading(false);
+      }
     }
   };
 
@@ -110,13 +138,15 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </p>
         </div>
 
-        {/* Warning about Iframe limitations */}
-        {isInIframe && (
+        {/* Warning about Iframe/Android limitations */}
+        {(isInIframe || isAndroid) && (
           <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 rounded-2xl flex items-start gap-3 text-xs leading-relaxed animate-fadeIn">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
             <div>
-              <p className="font-bold mb-1">Avis de l'environnement d'aperçu :</p>
-              Pour vous connecter avec Google ou Email, veuillez <span className="font-bold underline">ouvrir l'application dans un nouvel onglet</span> en cliquant sur l'icône de redirection en haut à droite. Les navigateurs bloquent la communication d'authentification au sein des cadres intégrés (iframes).
+              <p className="font-bold mb-1">{isAndroid ? 'Astuce pour Android :' : 'Avis pour l\'aperçu :'}</p>
+              {isAndroid 
+                ? "Si la connexion échoue, essayez d'ouvrir l'application dans votre navigateur par défaut via le menu de votre téléphone."
+                : "La connexion peut être bloquée dans cet aperçu. Pour vous connecter, veuillez ouvrir l'application dans un nouvel onglet."}
             </div>
           </div>
         )}
