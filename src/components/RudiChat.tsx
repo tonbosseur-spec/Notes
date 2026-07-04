@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User, Loader2 } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { Note, NoteGroup, Task, TaskList } from '../types';
+import { Note, NoteGroup, Task, TaskList, UserProfile } from '../types';
 
 interface RudiChatProps {
   isOpen: boolean;
@@ -9,14 +9,17 @@ interface RudiChatProps {
   contextId: string;
   notes: Note[];
   groups: NoteGroup[];
+  userProfile: UserProfile | null;
   tasks?: Task[];
   taskLists?: TaskList[];
   apiKey: string;
+  geminiModel?: string;
   chatThreads: Record<string, any[]>;
   setChatThreads: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
   onCreateNote: (title: string, content: string, groupName?: string) => void;
   onOrganizeNotes: (assignments: { noteId: string, groupName: string }[]) => void;
   onRenameNote: (noteId: string, newTitle: string) => void;
+  onModifyNote: (noteId: string, content: string) => void;
   onCreateTask?: (listName: string, title: string, dueDate?: string, priority?: 'high' | 'medium' | 'low') => void;
   onUpdateTask?: (taskId: string, updates: Partial<Task>) => void;
   onAddTaskList?: (name: string) => string | void; // returns listId ideally, but we can manage inside App.tsx or here
@@ -28,14 +31,17 @@ export default function RudiChat({
   contextId,
   notes,
   groups,
+  userProfile,
   tasks = [],
   taskLists = [],
   apiKey,
+  geminiModel,
   chatThreads,
   setChatThreads,
   onCreateNote,
   onOrganizeNotes,
   onRenameNote,
+  onModifyNote,
   onCreateTask,
   onUpdateTask,
   onAddTaskList
@@ -63,31 +69,38 @@ export default function RudiChat({
 
   const sendMessageToApi = async (currentMessages: any[]) => {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      };
+      if (geminiModel) {
+        headers['x-gemini-model'] = geminiModel;
+      }
+
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-        },
+        headers,
         body: JSON.stringify({
           messages: currentMessages,
           contextId,
           notes,
           groups,
           tasks,
-          taskLists
+          taskLists,
+          model: geminiModel
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        throw new Error(data.error || 'Network response was not ok');
       }
 
-      const data = await response.json();
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erreur:", error);
-      return { error: true };
+      return { error: true, message: error.message || "Désolé, une erreur s'est produite lors de la communication." };
     }
   };
 
@@ -111,22 +124,28 @@ export default function RudiChat({
       const data = await sendMessageToApi(currentMessages);
 
       if (data.error) {
-        currentMessages = [...currentMessages, { role: 'model', parts: [{ text: "Désolé, une erreur s'est produite lors de la communication." }] }];
+        const errorMsg = data.message || "Désolé, une erreur s'est produite lors de la communication.";
+        currentMessages = [...currentMessages, { role: 'model', parts: [{ text: errorMsg }] }];
         setChatThreads(prev => ({ ...prev, [contextId]: currentMessages }));
         isDone = true;
         break;
       }
 
       if (data.functionCalls && data.functionCalls.length > 0) {
-        // Add model's function call message
-        const modelFuncMsg = { role: 'model', parts: data.functionCalls.map((fc: any) => ({ functionCall: fc })) };
+        // Add model's function call message, preserving exact parts from API if available to keep thought_signature and functionCall id intact
+        const modelFuncMsg = { 
+          role: 'model', 
+          parts: data.parts && data.parts.length > 0 
+            ? data.parts 
+            : data.functionCalls.map((fc: any) => ({ functionCall: fc })) 
+        };
         currentMessages = [...currentMessages, modelFuncMsg];
         setChatThreads(prev => ({ ...prev, [contextId]: currentMessages }));
 
         // Execute functions and collect responses
         const functionResponses = [];
         for (const fc of data.functionCalls) {
-          const { name, args } = fc;
+          const { name, args, id } = fc;
           let result = { success: true };
           try {
             if (name === 'createNote') {
@@ -138,6 +157,9 @@ export default function RudiChat({
             } else if (name === 'renameNote') {
               onRenameNote(args.noteId, args.newTitle);
               result = { success: true, message: `Note renommée avec succès.` } as any;
+            } else if (name === 'modifyNote') {
+              onModifyNote(args.noteId, args.content);
+              result = { success: true, message: `Note modifiée avec succès.` } as any;
             } else if (name === 'createTask' && onCreateTask) {
               onCreateTask(args.listName, args.title, args.dueDate, args.priority);
               result = { success: true, message: `Tâche '${args.title}' créée avec succès.` } as any;
@@ -158,7 +180,8 @@ export default function RudiChat({
           functionResponses.push({
             functionResponse: {
               name,
-              response: result
+              response: result,
+              ...(id ? { id } : {})
             }
           });
         }
@@ -233,7 +256,7 @@ export default function RudiChat({
               <Bot className="w-6 h-6" />
             </div>
             <p className="text-sm text-stone-500 dark:text-stone-400">
-              Bonjour ! Je suis Rudi, votre assistant maniaque du rangement. Je peux vous aider à organiser vos notes ou répondre à vos questions.
+              Bonjour {userProfile?.preferredName || userProfile?.firstName || 'utilisateur'} ! Je suis Rudi, votre assistant maniaque du rangement. Je peux vous aider à organiser vos notes ou répondre à vos questions.
             </p>
           </div>
         )}

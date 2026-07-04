@@ -4,18 +4,22 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Note, AppSettings, NoteGroup, ChatThread, Task, TaskList } from './types';
+import { Loader2, Bell, Check, Clock, X } from 'lucide-react';
+import { StatusBar } from '@capacitor/status-bar';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { motion, AnimatePresence } from 'motion/react';
+import { Note, AppSettings, NoteGroup, ChatThread, Task, TaskList, UserProfile } from './types';
 import NotesView from './components/NotesView';
 import Home from './components/Home';
 import Settings from './components/Settings';
 import RudiChat from './components/RudiChat';
 import TasksView from './components/TasksView';
 import LoginScreen from './components/LoginScreen';
+import FirstTimeProfileModal from './components/FirstTimeProfileModal';
 import { get, set } from 'idb-keyval';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, doc, getDoc } from 'firebase/firestore';
 import { 
   saveNoteToCloud, 
   deleteNoteFromCloud, 
@@ -26,7 +30,8 @@ import {
   saveTaskListToCloud, 
   deleteTaskListFromCloud, 
   mergeLocalAndCloud,
-  exportToNts
+  exportToNts,
+  saveProfileToCloud
 } from './lib/sync';
 
 type ViewState = 'home' | 'notes' | 'settings' | 'tasks';
@@ -34,7 +39,7 @@ type ViewState = 'home' | 'notes' | 'settings' | 'tasks';
 export default function App() {
   const [view, setView] = useState<ViewState>('home');
   const [notes, setNotes] = useState<Note[]>([]);
-  const [settings, setSettings] = useState<AppSettings>({ theme: 'system', apiKey: '', enableNotifications: true, authChoice: null });
+  const [settings, setSettings] = useState<AppSettings>({ theme: 'system', apiKey: '', enableNotifications: true, authChoice: null, geminiModel: 'gemini-3.5-flash' });
   const [groups, setGroups] = useState<NoteGroup[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
@@ -42,12 +47,62 @@ export default function App() {
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // User Profile state
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
   // Firebase Auth and Live Sync State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Rudi Chat state
   const [isRudiOpen, setIsRudiOpen] = useState(false);
   const [chatThreads, setChatThreads] = useState<Record<string, any[]>>({});
+
+  // Floating elegant notification alerts state
+  const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
+
+  // Listen to test notification triggers from Settings
+  useEffect(() => {
+    const handleTestNotification = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setActiveNotifications(prev => {
+          // Prevent duplicates of the same test if multiple events are fired quickly
+          const exists = prev.some(n => n.title === detail.title && n.body === detail.body);
+          if (exists) return prev;
+          return [
+            ...prev,
+            {
+              id: 'test-' + Date.now() + Math.random(),
+              title: detail.title || "Notes Copilot",
+              body: detail.body || "",
+              listName: detail.listName,
+              isTest: detail.isTest,
+              createdAt: Date.now()
+            }
+          ];
+        });
+      }
+    };
+
+    window.addEventListener('app-trigger-test-notification', handleTestNotification);
+    return () => {
+      window.removeEventListener('app-trigger-test-notification', handleTestNotification);
+    };
+  }, []);
+
+  // Hide StatusBar for Android immersive mode
+  useEffect(() => {
+    const enableImmersiveMode = async () => {
+      try {
+        await StatusBar.hide();
+        await StatusBar.setOverlaysWebView({ overlay: true });
+      } catch (err) {
+        // Ignored when running outside a Capacitor Android environment (e.g. browser preview)
+        console.log('Immersive mode (StatusBar.hide) not supported in this environment.', err);
+      }
+    };
+    enableImmersiveMode();
+  }, []);
 
   // Load from IndexedDB
   useEffect(() => {
@@ -57,8 +112,9 @@ export default function App() {
       get('groups'),
       get('chatThreads'),
       get('tasks'),
-      get('taskLists')
-    ]).then(([savedNotes, savedSettings, savedGroups, savedChatThreads, savedTasks, savedTaskLists]) => {
+      get('taskLists'),
+      get('userProfile')
+    ]).then(([savedNotes, savedSettings, savedGroups, savedChatThreads, savedTasks, savedTaskLists, savedProfile]) => {
       if (savedNotes && savedNotes.length > 0) {
         setNotes(savedNotes);
         setActiveNoteId(savedNotes[0].id);
@@ -68,6 +124,7 @@ export default function App() {
       if (savedGroups) setGroups(savedGroups);
       if (savedChatThreads) setChatThreads(savedChatThreads);
       if (savedTasks) setTasks(savedTasks);
+      if (savedProfile) setUserProfile(savedProfile);
       
       let loadedTaskLists = savedTaskLists;
       if (!loadedTaskLists || loadedTaskLists.length === 0) {
@@ -88,8 +145,9 @@ export default function App() {
       set('chatThreads', chatThreads);
       set('tasks', tasks);
       set('taskLists', taskLists);
+      set('userProfile', userProfile);
     }
-  }, [notes, settings, groups, chatThreads, tasks, taskLists, isLoading]);
+  }, [notes, settings, groups, chatThreads, tasks, taskLists, userProfile, isLoading]);
 
   // Apply theme
   useEffect(() => {
@@ -119,6 +177,46 @@ export default function App() {
         // Automatically ensure setting matches cloud auth state
         if (settings.authChoice !== 'cloud') {
           setSettings(prev => ({ ...prev, authChoice: 'cloud' }));
+        }
+
+        // Set up User Profile
+        const isGoogle = user.providerData?.some(p => p.providerId === 'google.com') || false;
+        if (isGoogle) {
+          const displayName = user.displayName || '';
+          const parts = displayName.trim().split(/\s+/);
+          const fName = parts[0] || 'Utilisateur';
+          const lName = parts.slice(1).join(' ') || '';
+          const photoUrl = user.photoURL || null;
+
+          const googleProfile: UserProfile = {
+            firstName: fName,
+            lastName: lName,
+            photoUrl,
+            isGoogle: true
+          };
+          setUserProfile(googleProfile);
+          set('userProfile', googleProfile);
+          await saveProfileToCloud(user.uid, googleProfile);
+        } else {
+          try {
+            const profileSnap = await getDoc(doc(db, 'users', user.uid, 'profile', 'info'));
+            if (profileSnap.exists()) {
+              const cloudProfile = profileSnap.data() as UserProfile;
+              setUserProfile(cloudProfile);
+              set('userProfile', cloudProfile);
+            } else {
+              const localProfile = await get('userProfile');
+              if (localProfile) {
+                const updatedProfile = { ...localProfile, isGoogle: false };
+                setUserProfile(updatedProfile);
+                await saveProfileToCloud(user.uid, updatedProfile);
+              } else {
+                setUserProfile(null);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to load user profile:", err);
+          }
         }
 
         try {
@@ -259,7 +357,31 @@ export default function App() {
     await signOut(auth);
     setSettings(prev => ({ ...prev, authChoice: null }));
     setCurrentUser(null);
+    setUserProfile(null);
+    set('userProfile', null);
     setView('home');
+  };
+
+  const handleSaveFirstTimeProfile = async (profileData: { firstName: string; lastName: string; photoUrl: string | null }) => {
+    const newProfile: UserProfile = {
+      ...profileData,
+      isGoogle: false
+    };
+    setUserProfile(newProfile);
+    set('userProfile', newProfile);
+    if (currentUser) {
+      await saveProfileToCloud(currentUser.uid, newProfile);
+    }
+  };
+
+  const handleUpdateUserProfile = async (updates: Partial<UserProfile>) => {
+    if (!userProfile) return;
+    const updatedProfile = { ...userProfile, ...updates };
+    setUserProfile(updatedProfile);
+    set('userProfile', updatedProfile);
+    if (currentUser && !userProfile.isGoogle) {
+      await saveProfileToCloud(currentUser.uid, updatedProfile);
+    }
   };
 
   // State modifiers with Firestore backup triggers
@@ -283,6 +405,32 @@ export default function App() {
     setNotes(prev => prev.map(note => {
       if (note.id === id) {
         const nextNote = { ...note, ...updates, updatedAt: Date.now() };
+
+        if (updates.dueDate && !nextNote.linkedTaskId) {
+            const listId = taskLists.length > 0 ? taskLists[0].id : crypto.randomUUID();
+            if (taskLists.length === 0) {
+              const newList: TaskList = { id: listId, name: 'Tâches', createdAt: Date.now() };
+              setTaskLists(prev => [...prev, newList]);
+              if (currentUser) saveTaskListToCloud(currentUser.uid, newList);
+            }
+            
+            const newTask: Task = {
+                id: crypto.randomUUID(),
+                listId: listId,
+                title: `Tâche pour: ${nextNote.title}`,
+                details: '',
+                dueDate: nextNote.dueDate,
+                subTasks: [],
+                completed: false,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                linkedNoteId: nextNote.id
+            };
+            nextNote.linkedTaskId = newTask.id;
+            setTasks(prev => [...prev, newTask]);
+            if (currentUser) saveTaskToCloud(currentUser.uid, newTask);
+        }
+
         if (currentUser) {
           saveNoteToCloud(currentUser.uid, nextNote);
         }
@@ -430,8 +578,8 @@ export default function App() {
     setNotes(prev => [...newNotes, ...prev]);
   };
 
-  const handleAddTaskList = (name: string) => {
-    const newList = { id: crypto.randomUUID(), name, createdAt: Date.now() };
+  const handleAddTaskList = (name: string, color?: string) => {
+    const newList: TaskList = { id: crypto.randomUUID(), name, color, createdAt: Date.now() };
     setTaskLists(prev => [...prev, newList]);
     if (currentUser) {
       saveTaskListToCloud(currentUser.uid, newList);
@@ -462,6 +610,10 @@ export default function App() {
     if (currentUser) {
       saveTaskToCloud(currentUser.uid, newTask);
     }
+  };
+
+  const handleRudiModifyNote = (noteId: string, content: string) => {
+    handleUpdateNote(noteId, { content, updatedAt: Date.now() });
   };
 
   const handleRudiCreateTask = (listName: string, title: string, dueDate?: string, priority: 'high' | 'medium' | 'low' = 'medium') => {
@@ -555,25 +707,60 @@ export default function App() {
   // Local task notifications scheduler
   useEffect(() => {
     if (!settings.enableNotifications) return;
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
 
     const checkTasks = () => {
       const now = Date.now();
-      tasks.forEach((task) => {
+      tasks.forEach(async (task) => {
         if (task.completed || !task.dueDate || task.notified) return;
 
         const dueTime = new Date(task.dueDate).getTime();
         if (dueTime <= now) {
+          const listName = taskLists.find(l => l.id === task.listId)?.name || 'Ma liste';
+
+          // 1. Trigger beautiful custom Android-style in-app notification Toast
+          setActiveNotifications(prev => {
+            const exists = prev.some(n => n.id === task.id);
+            if (exists) return prev;
+            return [
+              ...prev,
+              {
+                id: task.id,
+                title: `Tâche urgente : ${task.title}`,
+                body: task.details || `L'heure limite est atteinte ! Liste : ${listName}.`,
+                listName: listName,
+                taskId: task.id,
+                createdAt: Date.now()
+              }
+            ];
+          });
+
+          // 2. Trigger native Capacitor LocalNotification if supported
           try {
-            const listName = taskLists.find(l => l.id === task.listId)?.name || 'Ma liste';
-            new Notification(`Tâche urgente : ${task.title}`, {
-              body: `L'heure limite est atteinte ! Liste : ${listName}.${task.details ? `\n\nDétails : ${task.details}` : ''}`,
-              icon: '/favicon.ico',
-              requireInteraction: true
+            await LocalNotifications.schedule({
+              notifications: [
+                {
+                  id: Math.floor(Math.random() * 100000),
+                  title: `Tâche urgente : ${task.title}`,
+                  body: `Liste : ${listName}.${task.details ? ` - ${task.details}` : ''}`,
+                  schedule: { at: new Date(Date.now() + 200) }
+                }
+              ]
             });
-          } catch (err) {
-            console.error("Failed to show task notification:", err);
+          } catch (e) {
+            console.log("Capacitor local notification schedule skipped or unsupported on this platform.");
+          }
+
+          // 3. Trigger standard web Notification if supported and granted
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification(`Tâche urgente : ${task.title}`, {
+                body: `L'heure limite est atteinte ! Liste : ${listName}.${task.details ? `\n\nDétails : ${task.details}` : ''}`,
+                icon: '/favicon.ico',
+                requireInteraction: true
+              });
+            } catch (err) {
+              console.error("Failed to show web notification:", err);
+            }
           }
 
           // Mark task as notified
@@ -582,9 +769,9 @@ export default function App() {
       });
     };
 
-    // Check immediately and then every 15 seconds
+    // Check immediately and then every 10 seconds (more responsive!)
     checkTasks();
-    const interval = setInterval(checkTasks, 15000);
+    const interval = setInterval(checkTasks, 10000);
 
     return () => clearInterval(interval);
   }, [tasks, settings.enableNotifications, taskLists]);
@@ -604,8 +791,16 @@ export default function App() {
 
   const rudiContextId = view === 'notes' && activeNoteId ? activeNoteId : 'general';
 
+  const shouldShowFirstTime = !isLoading && 
+                              settings.authChoice !== null && 
+                              !userProfile && 
+                              !(currentUser?.providerData?.some(p => p.providerId === 'google.com'));
+
   return (
     <>
+      {shouldShowFirstTime && (
+        <FirstTimeProfileModal onSave={handleSaveFirstTimeProfile} />
+      )}
       {view === 'home' && (
         <Home 
           onNavigate={(v) => {
@@ -618,6 +813,7 @@ export default function App() {
             setView('notes');
           }}
           onOpenRudi={() => setIsRudiOpen(true)}
+          userProfile={userProfile}
         />
       )}
 
@@ -630,6 +826,9 @@ export default function App() {
           onDeleteGroup={handleDeleteGroup}
           onGoHome={() => setView('home')}
           onImportNotes={handleImportNotes}
+          
+          userProfile={userProfile}
+          onUpdateUserProfile={handleUpdateUserProfile}
           
           currentUser={currentUser}
           onSignOut={handleSignOut}
@@ -646,6 +845,7 @@ export default function App() {
           notes={notes}
           activeNoteId={activeNoteId}
           apiKey={settings.apiKey}
+          geminiModel={settings.geminiModel}
           groups={groups}
           onAddGroup={handleAddGroup}
           onSetActiveNoteId={setActiveNoteId}
@@ -655,6 +855,7 @@ export default function App() {
           onGoHome={() => setView('home')}
           onOpenRudi={() => setIsRudiOpen(true)}
           onUpdateNotes={setNotes}
+          userProfile={userProfile}
         />
       )}
 
@@ -669,6 +870,10 @@ export default function App() {
           onGoHome={() => setView('home')}
           onOpenRudi={() => setIsRudiOpen(true)}
           onUpdateTaskListsOrder={handleUpdateTaskListsOrder}
+          onOpenNote={(noteId) => {
+            setActiveNoteId(noteId);
+            setView('notes');
+          }}
         />
       )}
 
@@ -681,14 +886,104 @@ export default function App() {
         tasks={tasks}
         taskLists={taskLists}
         apiKey={settings.apiKey}
+        geminiModel={settings.geminiModel}
         chatThreads={chatThreads}
         setChatThreads={setChatThreads}
         onCreateNote={handleRudiCreateNote}
         onOrganizeNotes={handleOrganizeNotes}
         onRenameNote={handleRenameNote}
+        onModifyNote={handleRudiModifyNote}
+        userProfile={userProfile}
         onCreateTask={handleRudiCreateTask}
         onUpdateTask={handleUpdateTask}
       />
+
+      {/* Floating Elegant Android-style Notification Stack */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4 flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {activeNotifications.map((notif) => (
+            <motion.div
+              key={notif.id}
+              initial={{ opacity: 0, y: -50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="pointer-events-auto w-full backdrop-blur-xl bg-stone-900/90 text-white dark:bg-white/95 dark:text-stone-900 shadow-2xl rounded-2xl border border-white/10 dark:border-stone-200/50 p-4 flex flex-col gap-3 transition-colors duration-200"
+            >
+              {/* Header section (resembles Android status bar notification pill) */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center shadow-inner">
+                    <Bell className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <span className="text-[11px] font-bold tracking-wider uppercase opacity-80 dark:opacity-90">
+                    Notes Copilot • Rappel
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] opacity-50">maintenant</span>
+                  <button 
+                    onClick={() => setActiveNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                    className="p-1 rounded-full hover:bg-white/10 dark:hover:bg-stone-200/50 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Message section */}
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold tracking-tight">{notif.title}</h4>
+                <p className="text-xs opacity-80 dark:opacity-75 leading-relaxed">{notif.body}</p>
+                {notif.listName && (
+                  <span className="inline-block mt-1 text-[10px] font-bold bg-indigo-500/20 text-indigo-300 dark:bg-indigo-100 dark:text-indigo-600 px-2 py-0.5 rounded-full">
+                    {notif.listName}
+                  </span>
+                )}
+              </div>
+
+              {/* Actions section (gorgeous custom action pills representing modern Android interactive notifications) */}
+              {!notif.isTest && notif.taskId && (
+                <div className="flex items-center gap-2 pt-1.5 border-t border-white/10 dark:border-stone-200/40">
+                  <button
+                    onClick={() => {
+                      handleUpdateTask(notif.taskId, { completed: true });
+                      setActiveNotifications(prev => prev.filter(n => n.id !== notif.id));
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-50 dark:hover:bg-emerald-100 dark:text-emerald-700 text-[11px] font-semibold transition-all shadow-xs cursor-pointer"
+                  >
+                    <Check className="w-3 h-3" />
+                    Terminer
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Snooze: delay task due date by 5 minutes
+                      const currentTask = tasks.find(t => t.id === notif.taskId);
+                      if (currentTask && currentTask.dueDate) {
+                        const newDueDate = new Date(new Date(currentTask.dueDate).getTime() + 5 * 60 * 1000).toISOString();
+                        handleUpdateTask(notif.taskId, { dueDate: newDueDate, notified: false });
+                      }
+                      setActiveNotifications(prev => prev.filter(n => n.id !== notif.id));
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 dark:bg-stone-100 dark:hover:bg-stone-200 dark:text-stone-800 text-[11px] font-semibold transition-all cursor-pointer"
+                  >
+                    <Clock className="w-3 h-3" />
+                    Snoozer 5m
+                  </button>
+                </div>
+              )}
+
+              {notif.isTest && (
+                <div className="flex items-center gap-2 pt-1.5 border-t border-white/10 dark:border-stone-200/40">
+                  <div className="flex-1 py-1 text-center text-[10px] italic text-indigo-300 dark:text-indigo-600 bg-indigo-500/10 dark:bg-indigo-50 rounded-lg">
+                    Ceci est une prévisualisation interactive !
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </>
   );
 }

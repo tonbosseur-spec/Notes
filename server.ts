@@ -16,9 +16,31 @@ if (process.env.GEMINI_API_KEY) {
   ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 }
 
+function getModelName(req: any): string {
+  let model = (req.headers['x-gemini-model'] as string) || req.body.model || '';
+  if (model === 'undefined' || model === 'null') {
+    model = '';
+  }
+  model = (model || '').trim();
+  const validModels = [
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-pro-preview',
+    'gemini-2.5-flash'
+  ];
+  if (validModels.includes(model)) {
+    return model;
+  }
+  return 'gemini-3.5-flash';
+}
+
 // AI Summarize API
 app.post("/api/ai/summarize", async (req, res) => {
-  const customApiKey = req.headers['x-api-key'] as string;
+  let customApiKey = req.headers['x-api-key'] as string;
+  if (customApiKey === 'undefined' || customApiKey === 'null') {
+    customApiKey = '';
+  }
+  customApiKey = (customApiKey || '').trim();
   const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
 
   if (!activeAi) {
@@ -31,9 +53,10 @@ app.post("/api/ai/summarize", async (req, res) => {
   }
 
   try {
+    const modelName = getModelName(req);
     const response = await activeAi.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Tu es un assistant IA intégré dans une application de prise de notes. Ta tâche est de fournir un résumé concis et clair de la note suivante.
+      model: modelName,
+      contents: `Tu es un assistant IA intégré dans une application de prise de notes. Ta tâche est de fournir un résumé concis et clair de la note suivante. L'utilisateur s'appelle ${req.body.userProfile?.preferredName || req.body.userProfile?.firstName || 'utilisateur'} et son pronom est ${req.body.userProfile?.pronoun || 'il'}.
 
 Note :
 """
@@ -44,15 +67,19 @@ Fournis uniquement le résumé en format texte brut ou markdown très basique, s
     });
 
     res.json({ summary: response.text });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur lors de la génération du résumé :", error);
-    res.status(500).json({ error: "Erreur lors de la génération du résumé." });
+    res.status(500).json({ error: error.message || "Erreur lors de la génération du résumé." });
   }
 });
 
 // AI Organize/Structure API
 app.post("/api/ai/organize", async (req, res) => {
-  const customApiKey = req.headers['x-api-key'] as string;
+  let customApiKey = req.headers['x-api-key'] as string;
+  if (customApiKey === 'undefined' || customApiKey === 'null') {
+    customApiKey = '';
+  }
+  customApiKey = (customApiKey || '').trim();
   const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
 
   if (!activeAi) {
@@ -65,9 +92,10 @@ app.post("/api/ai/organize", async (req, res) => {
   }
 
   try {
+    const modelName = getModelName(req);
     const response = await activeAi.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Tu es un assistant IA intégré dans une application de prise de notes. Ta tâche est de réorganiser, reformuler et formater la note suivante pour qu'elle soit claire, structurée et professionnelle (utilise des listes à puces, du gras, des titres si nécessaire).
+      model: modelName,
+      contents: `Tu es un assistant IA intégré dans une application de prise de notes. Ta tâche est de réorganiser, reformuler et formater la note suivante pour qu'elle soit claire, structurée et professionnelle (utilise des listes à puces, du gras, des titres si nécessaire). L'utilisateur s'appelle ${req.body.userProfile?.preferredName || req.body.userProfile?.firstName || 'utilisateur'} et son pronom est ${req.body.userProfile?.pronoun || 'il'}.
 
 Note brute :
 """
@@ -86,15 +114,19 @@ Renvoie uniquement le texte formaté en HTML basique compatible avec Tiptap (ex:
     }
 
     res.json({ organizedContent: htmlResult.trim() });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur lors de l'organisation :", error);
-    res.status(500).json({ error: "Erreur lors de l'organisation." });
+    res.status(500).json({ error: error.message || "Erreur lors de l'organisation." });
   }
 });
 
 // AI Rewrite API
 app.post("/api/ai/rewrite", async (req, res) => {
-  const customApiKey = req.headers['x-api-key'] as string;
+  let customApiKey = req.headers['x-api-key'] as string;
+  if (customApiKey === 'undefined' || customApiKey === 'null') {
+    customApiKey = '';
+  }
+  customApiKey = (customApiKey || '').trim();
   const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
 
   if (!activeAi) {
@@ -107,9 +139,10 @@ app.post("/api/ai/rewrite", async (req, res) => {
   }
 
   try {
+    const modelName = getModelName(req);
     const response = await activeAi.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Tu es Rudi, un assistant IA intégré dans une application de prise de notes. Ta tâche est de réécrire, corriger ou améliorer le texte sélectionné par l'utilisateur.
+      model: modelName,
+      contents: `Tu es Rudi, un assistant IA intégré dans une application de prise de notes. Ta tâche est de réécrire, corriger ou améliorer le texte sélectionné par l'utilisateur. L'utilisateur s'appelle ${req.body.userProfile?.preferredName || req.body.userProfile?.firstName || 'utilisateur'} et son pronom est ${req.body.userProfile?.pronoun || 'il'}.
 
 Texte sélectionné :
 """
@@ -129,15 +162,19 @@ Renvoie uniquement le texte modifié en HTML basique compatible avec Tiptap (ex:
     }
 
     res.json({ text: htmlResult.trim() });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur lors de la réécriture :", error);
-    res.status(500).json({ error: "Erreur lors de la réécriture." });
+    res.status(500).json({ error: error.message || "Erreur lors de la réécriture." });
   }
 });
 
 // Rudi Chat API
 app.post("/api/ai/chat", async (req, res) => {
-  const customApiKey = req.headers['x-api-key'] as string;
+  let customApiKey = req.headers['x-api-key'] as string;
+  if (customApiKey === 'undefined' || customApiKey === 'null') {
+    customApiKey = '';
+  }
+  customApiKey = (customApiKey || '').trim();
   const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
 
   if (!activeAi) {
@@ -177,8 +214,9 @@ Tes capacités :
 5. Reste dans ton personnage de maniaque du rangement, sois courtois mais pointilleux sur l'organisation.`;
 
   try {
+    const modelName = getModelName(req);
     const response = await activeAi.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: modelName,
       contents: messages,
       config: {
         systemInstruction,
@@ -219,7 +257,7 @@ Tes capacités :
                 required: ["assignments"]
               }
             },
-            {
+             {
               name: "renameNote",
               description: "Renomme le titre d'une note existante.",
               parameters: {
@@ -229,6 +267,18 @@ Tes capacités :
                   newTitle: { type: Type.STRING, description: "Le nouveau titre de la note" }
                 },
                 required: ["noteId", "newTitle"]
+              }
+            },
+            {
+              name: "modifyNote",
+              description: "Modifie le contenu d'une note existante.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  noteId: { type: Type.STRING, description: "L'ID de la note à modifier" },
+                  content: { type: Type.STRING, description: "Le nouveau contenu de la note (HTML basique autorisé pour la structure)" }
+                },
+                required: ["noteId", "content"]
               }
             },
             {
@@ -266,13 +316,16 @@ Tes capacités :
     });
 
     if (response.functionCalls && response.functionCalls.length > 0) {
-      res.json({ functionCalls: response.functionCalls });
+      res.json({ 
+        functionCalls: response.functionCalls,
+        parts: response.candidates?.[0]?.content?.parts || []
+      });
     } else {
       res.json({ text: response.text });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur Rudi Chat:", error);
-    res.status(500).json({ error: "Erreur lors de la conversation avec Rudi." });
+    res.status(500).json({ error: error.message || "Erreur lors de la conversation avec Rudi." });
   }
 });
 

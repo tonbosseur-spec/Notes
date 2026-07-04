@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Bot, FileText, Folder, PenTool, Plus, ChevronRight, Activity, Calendar } from 'lucide-react';
-import { Note, NoteGroup } from '../types';
+import { ArrowLeft, Bot, FileText, Folder, PenTool, Plus, ChevronRight, Activity, Calendar, Home as HomeIcon } from 'lucide-react';
+import { Note, NoteGroup, UserProfile } from '../types';
 import Sidebar from './Sidebar';
 import Editor from './Editor';
 
@@ -8,6 +8,7 @@ interface NotesViewProps {
   notes: Note[];
   activeNoteId: string | null;
   apiKey: string;
+  geminiModel?: string;
   groups: NoteGroup[];
   onAddGroup: (name: string) => string;
   onSetActiveNoteId: (id: string | null) => void;
@@ -17,12 +18,15 @@ interface NotesViewProps {
   onGoHome: () => void;
   onOpenRudi: () => void;
   onUpdateNotes: (notes: Note[]) => void;
+  userProfile: UserProfile | null;
+  onLinkTask: (noteId: string) => void;
 }
 
 export default function NotesView({
   notes,
   activeNoteId,
   apiKey,
+  geminiModel,
   groups,
   onAddGroup,
   onSetActiveNoteId,
@@ -31,7 +35,8 @@ export default function NotesView({
   onDeleteNote,
   onGoHome,
   onOpenRudi,
-  onUpdateNotes
+  onUpdateNotes,
+  userProfile
 }: NotesViewProps) {
   const [mobileTab, setMobileTab] = useState<'dashboard' | 'notes'>('dashboard');
   const activeNote = notes.find((n) => n.id === activeNoteId) || null;
@@ -67,10 +72,18 @@ export default function NotesView({
     <div className="flex h-screen w-full overflow-hidden relative bg-stone-50 dark:bg-stone-950 flex-col md:flex-row">
       {/* Mobile subheader when no note is selected */}
       {!activeNote && (
-        <div className="flex md:hidden bg-stone-100 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 p-2 gap-2 shrink-0">
+        <div className="flex md:hidden bg-stone-100 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 p-2 gap-2 shrink-0 items-center">
+          <button
+            onClick={onGoHome}
+            className="flex items-center justify-center p-2 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-950 dark:hover:text-stone-50 hover:bg-stone-200/50 dark:hover:bg-stone-800/50 transition-all cursor-pointer"
+            title="Retour à l'accueil"
+          >
+            <HomeIcon className="w-4 h-4" />
+          </button>
+          <div className="w-px h-5 bg-stone-200 dark:bg-stone-800" />
           <button
             onClick={() => setMobileTab('dashboard')}
-            className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-all ${
+            className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-all cursor-pointer ${
               mobileTab === 'dashboard'
                 ? 'bg-white dark:bg-stone-800 shadow-xs text-stone-900 dark:text-stone-100'
                 : 'text-stone-500 dark:text-stone-400'
@@ -80,7 +93,7 @@ export default function NotesView({
           </button>
           <button
             onClick={() => setMobileTab('notes')}
-            className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-all ${
+            className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-all cursor-pointer ${
               mobileTab === 'notes'
                 ? 'bg-white dark:bg-stone-800 shadow-xs text-stone-900 dark:text-stone-100'
                 : 'text-stone-500 dark:text-stone-400'
@@ -119,7 +132,7 @@ export default function NotesView({
       {/* Main Content */}
       <div className={`
         ${activeNote ? 'flex' : (mobileTab === 'dashboard' ? 'flex' : 'hidden md:flex')}
-        flex-1 flex-col min-w-0 h-full relative bg-white dark:bg-stone-950
+        flex-1 flex-col min-w-0 min-h-0 relative bg-white dark:bg-stone-950
       `}>
         {/* Mobile Header for back navigation */}
         {activeNote && (
@@ -162,10 +175,12 @@ export default function NotesView({
             <Editor 
               note={activeNote} 
               apiKey={apiKey}
+              geminiModel={geminiModel}
               groups={groups}
               onAddGroup={onAddGroup}
               onUpdate={(updates) => onUpdateNote(activeNote.id, updates)} 
               onDelete={() => onDeleteNote(activeNote.id)}
+              userProfile={userProfile}
             />
           ) : (
             <div className="h-full overflow-y-auto bg-stone-50/40 dark:bg-stone-950/20">
@@ -179,13 +194,22 @@ export default function NotesView({
                       Visualisez, organisez et suivez vos pensées au quotidien.
                     </p>
                   </div>
-                  <button
-                    onClick={onCreateNote}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl text-sm font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors shadow-xs"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Nouvelle note
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={onGoHome}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-sm font-semibold hover:bg-stone-200 dark:hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <HomeIcon className="w-4 h-4" />
+                      Accueil
+                    </button>
+                    <button
+                      onClick={onCreateNote}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl text-sm font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Nouvelle note
+                    </button>
+                  </div>
                 </div>
 
                 {/* KPI Grid */}

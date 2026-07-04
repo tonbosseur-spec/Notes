@@ -7,12 +7,23 @@ import {
   onSnapshot, 
   getDocs 
 } from 'firebase/firestore';
-import { Note, NoteGroup, Task, TaskList } from '../types';
+import { Note, NoteGroup, Task, TaskList, UserProfile } from '../types';
+
+// Helper to save user profile to cloud
+export async function saveProfileToCloud(userId: string, profile: UserProfile) {
+  try {
+    await setDoc(doc(db, 'users', userId, 'profile', 'info'), profile);
+  } catch (err) {
+    console.error('Error saving profile to cloud:', err);
+  }
+}
+
 
 // Helper to write a single note to Firestore
 export async function saveNoteToCloud(userId: string, note: Note) {
   try {
-    await setDoc(doc(db, 'users', userId, 'notes', note.id), note);
+    const sanitized = JSON.parse(JSON.stringify(note));
+    await setDoc(doc(db, 'users', userId, 'notes', note.id), sanitized);
   } catch (err) {
     console.error('Error saving note to cloud:', err);
   }
@@ -30,7 +41,8 @@ export async function deleteNoteFromCloud(userId: string, noteId: string) {
 // Helper to write a single group to Firestore
 export async function saveGroupToCloud(userId: string, group: NoteGroup) {
   try {
-    await setDoc(doc(db, 'users', userId, 'groups', group.id), group);
+    const sanitized = JSON.parse(JSON.stringify(group));
+    await setDoc(doc(db, 'users', userId, 'groups', group.id), sanitized);
   } catch (err) {
     console.error('Error saving group to cloud:', err);
   }
@@ -48,7 +60,8 @@ export async function deleteGroupFromCloud(userId: string, groupId: string) {
 // Helper to write a single task to Firestore
 export async function saveTaskToCloud(userId: string, task: Task) {
   try {
-    await setDoc(doc(db, 'users', userId, 'tasks', task.id), task);
+    const sanitized = JSON.parse(JSON.stringify(task));
+    await setDoc(doc(db, 'users', userId, 'tasks', task.id), sanitized);
   } catch (err) {
     console.error('Error saving task to cloud:', err);
   }
@@ -66,7 +79,8 @@ export async function deleteTaskFromCloud(userId: string, taskId: string) {
 // Helper to write a single task list to Firestore
 export async function saveTaskListToCloud(userId: string, list: TaskList) {
   try {
-    await setDoc(doc(db, 'users', userId, 'taskLists', list.id), list);
+    const sanitized = JSON.parse(JSON.stringify(list));
+    await setDoc(doc(db, 'users', userId, 'taskLists', list.id), sanitized);
   } catch (err) {
     console.error('Error saving task list to cloud:', err);
   }

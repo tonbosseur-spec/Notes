@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowLeft, 
   Monitor, 
@@ -24,9 +24,11 @@ import {
   LogOut, 
   LogIn 
 } from 'lucide-react';
-import { AppSettings, NoteGroup, Note } from '../types';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { AppSettings, NoteGroup, Note, UserProfile } from '../types';
 import ConfirmModal from './ConfirmModal';
 import { importFromNtsContent } from '../lib/sync';
+import UserProfileBlock from './UserProfileBlock';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -36,6 +38,8 @@ interface SettingsProps {
   onDeleteGroup: (id: string) => void;
   onGoHome: () => void;
   onImportNotes: (notes: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>[]) => void;
+  userProfile: UserProfile | null;
+  onUpdateUserProfile: (updates: Partial<UserProfile>) => void;
   
   // Sync & Cloud props
   currentUser: any | null;
@@ -51,7 +55,7 @@ interface SettingsProps {
   }) => void;
 }
 
-type SettingsTab = 'appearance' | 'folders' | 'rudi' | 'notifications' | 'backup';
+type SettingsTab = 'profil' | 'appearance' | 'folders' | 'rudi' | 'notifications' | 'backup';
 
 export default function Settings({ 
   settings, 
@@ -61,19 +65,35 @@ export default function Settings({
   onDeleteGroup, 
   onGoHome, 
   onImportNotes,
+  userProfile,
+  onUpdateUserProfile,
   currentUser,
   onSignOut,
   onSignInWithCloud,
   onExportNts,
   onImportNts
 }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profil');
+  const [profileFirstName, setProfileFirstName] = useState(userProfile?.firstName || '');
+  const [profileLastName, setProfileLastName] = useState(userProfile?.lastName || '');
+  const [profilePreferredName, setProfilePreferredName] = useState(userProfile?.preferredName || '');
+  const [profilePronoun, setProfilePronoun] = useState<'il' | 'elle'>(userProfile?.pronoun || 'il');
   const [newGroupName, setNewGroupName] = useState('');
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ntsFileInputRef = useRef<HTMLInputElement>(null);
   const [ntsError, setNtsError] = useState<string | null>(null);
+
+  // Sync profile fields from props
+  useEffect(() => {
+    if (userProfile) {
+      setProfileFirstName(userProfile.firstName);
+      setProfileLastName(userProfile.lastName);
+      setProfilePreferredName(userProfile.preferredName || '');
+      setProfilePronoun(userProfile.pronoun || 'il');
+    }
+  }, [userProfile]);
   const [ntsSuccess, setNtsSuccess] = useState<string | null>(null);
 
   const isNotificationSupported = typeof window !== 'undefined' && 'Notification' in window;
@@ -81,19 +101,90 @@ export default function Settings({
     isNotificationSupported ? Notification.permission : 'default'
   );
 
-  const requestPermission = async () => {
-    if (!isNotificationSupported) return;
-    const res = await Notification.requestPermission();
-    setPermission(res);
-    if (res === 'granted') {
-      onUpdateSettings({ ...settings, enableNotifications: true });
+  // Sync initial notification permissions, checking both Capacitor and browser
+  useEffect(() => {
+    const checkPermissions = async () => {
       try {
-        new Notification("Notes Copilot", {
-          body: "Notifications activées avec succès ! Vous recevrez des alertes pour vos tâches.",
-          icon: "/favicon.ico"
-        });
+        const capPerm = await LocalNotifications.checkPermissions();
+        if (capPerm.display === 'granted') {
+          setPermission('granted');
+          return;
+        }
       } catch (err) {
-        console.warn("Failed to trigger welcome notification:", err);
+        console.log('Capacitor notifications not initialized or supported in this context.', err);
+      }
+      
+      if (isNotificationSupported) {
+        setPermission(Notification.permission);
+      }
+    };
+    checkPermissions();
+  }, [isNotificationSupported]);
+
+  const requestPermission = async () => {
+    let granted = false;
+
+    // 1. Request Capacitor Local Notification permission on mobile/Android
+    try {
+      const capPermStatus = await LocalNotifications.requestPermissions();
+      if (capPermStatus.display === 'granted') {
+        granted = true;
+        setPermission('granted');
+      }
+    } catch (err) {
+      console.log('LocalNotifications not supported on this platform, checking standard web notification API:', err);
+    }
+
+    // 2. Request standard browser permission as secondary or fallback
+    if (isNotificationSupported) {
+      try {
+        const res = await Notification.requestPermission();
+        setPermission(res);
+        if (res === 'granted') {
+          granted = true;
+        }
+      } catch (err) {
+        console.warn('Failed requesting browser Notification permission:', err);
+      }
+    }
+
+    if (granted || permission === 'granted') {
+      onUpdateSettings({ ...settings, enableNotifications: true });
+      
+      // Dispatch custom event to trigger elegant in-app Android-style notification banner
+      window.dispatchEvent(new CustomEvent('app-trigger-test-notification', {
+        detail: {
+          title: "Notes Copilot",
+          body: "Félicitations ! Les notifications système sont maintenant configurées et prêtes."
+        }
+      }));
+
+      // Schedule a real native/system local notification
+      try {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: 999,
+              title: "Notes Copilot",
+              body: "Les notifications système sont correctement configurées !",
+              schedule: { at: new Date(Date.now() + 1000) }
+            }
+          ]
+        });
+      } catch (e) {
+        console.log("Capacitor LocalNotification schedule skipped or unsupported.");
+      }
+
+      // Show standard web notification
+      if (isNotificationSupported && Notification.permission === 'granted') {
+        try {
+          new Notification("Notes Copilot", {
+            body: "Notifications activées avec succès ! Vous recevrez des alertes pour vos tâches.",
+            icon: "/favicon.ico"
+          });
+        } catch (err) {
+          console.warn("Failed to trigger welcome web notification:", err);
+        }
       }
     }
   };
@@ -103,6 +194,50 @@ export default function Settings({
     onUpdateSettings({ ...settings, enableNotifications: nextValue });
     if (nextValue && permission !== 'granted') {
       requestPermission();
+    }
+  };
+
+  const triggerTestNotification = async () => {
+    // Force permission check or request
+    if (permission !== 'granted') {
+      await requestPermission();
+    }
+
+    // Dispatch elegant internal Android-style toast immediately
+    window.dispatchEvent(new CustomEvent('app-trigger-test-notification', {
+      detail: {
+        title: "Tâche urgente : Finaliser le design",
+        body: "L'heure de l'échéance est dépassée. Veuillez vérifier les détails de votre liste.",
+        listName: "Professionnel",
+        isTest: true
+      }
+    }));
+
+    // Trigger system-level native notification too
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: Math.floor(Math.random() * 10000),
+            title: "Tâche urgente : Finaliser le design",
+            body: "L'heure de l'échéance est dépassée. Liste : Professionnel.",
+            schedule: { at: new Date(Date.now() + 500) }
+          }
+        ]
+      });
+    } catch (e) {
+      console.log("Capacitor local notification schedule skipped in browser.");
+    }
+
+    if (isNotificationSupported && Notification.permission === 'granted') {
+      try {
+        new Notification("Tâche urgente : Finaliser le design", {
+          body: "L'heure de l'échéance est dépassée. Liste : Professionnel.",
+          icon: "/favicon.ico"
+        });
+      } catch (e) {
+        console.warn("Browser notification skipped.");
+      }
     }
   };
 
@@ -227,6 +362,18 @@ export default function Settings({
         {/* Tab Navigation */}
         <div className="flex border-b border-stone-200 dark:border-stone-800 overflow-x-auto gap-2 pb-px scrollbar-none">
           <button
+            onClick={() => setActiveTab('profil')}
+            className={`px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 flex items-center justify-center md:justify-start gap-2 ${
+              activeTab === 'profil'
+                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold'
+                : 'border-transparent text-stone-500 hover:text-stone-900 dark:hover:text-stone-200'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span className="hidden md:inline">Profil</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('appearance')}
             className={`px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 flex items-center justify-center md:justify-start gap-2 ${
               activeTab === 'appearance'
@@ -290,6 +437,78 @@ export default function Settings({
         {/* Tab Content Panels */}
         <div className="py-4 animate-fadeIn">
           
+          {/* TAB: PROFIL */}
+          {activeTab === 'profil' && (
+            <div className="space-y-6">
+              {userProfile && (
+                <UserProfileBlock 
+                  profile={userProfile} 
+                  editable={true} 
+                  onUpdateProfile={onUpdateUserProfile} 
+                />
+              )}
+              
+              <section className="bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 rounded-3xl p-6 shadow-xs space-y-4">
+                  <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100">Modifier vos informations</h3>
+                  
+                  <div className="space-y-4">
+                    {!userProfile?.isGoogle && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-stone-600 dark:text-stone-400">Prénom</label>
+                          <input
+                            type="text"
+                            value={profileFirstName}
+                            onChange={(e) => setProfileFirstName(e.target.value)}
+                            className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-50 border border-stone-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-stone-600 dark:text-stone-400">Nom</label>
+                          <input
+                            type="text"
+                            value={profileLastName}
+                            onChange={(e) => setProfileLastName(e.target.value)}
+                            className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-50 border border-stone-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors"
+                          />
+                        </div>
+                      </>
+                    )}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-stone-600 dark:text-stone-400">Prénom préféré</label>
+                      <input
+                        type="text"
+                        value={profilePreferredName}
+                        onChange={(e) => setProfilePreferredName(e.target.value)}
+                        className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-50 border border-stone-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-stone-600 dark:text-stone-400">Pronom</label>
+                      <select
+                        value={profilePronoun}
+                        onChange={(e) => setProfilePronoun(e.target.value as 'il' | 'elle')}
+                        className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-50 border border-stone-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors"
+                      >
+                        <option value="il">Il</option>
+                        <option value="elle">Elle</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => onUpdateUserProfile({ 
+                        ...(!userProfile?.isGoogle ? { firstName: profileFirstName, lastName: profileLastName } : {}),
+                        preferredName: profilePreferredName,
+                        pronoun: profilePronoun
+                      })}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-all text-sm"
+                    >
+                      Enregistrer les modifications
+                    </button>
+                  </div>
+                </section>
+            </div>
+          )}
+
           {/* TAB 1: APPEARANCE */}
           {activeTab === 'appearance' && (
             <div className="space-y-8">
@@ -465,8 +684,82 @@ export default function Settings({
                   placeholder="Collez votre clé : AIzaSy..."
                   className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-mono text-sm"
                 />
+              </section>
 
-                {/* Carousel & Helper Section */}
+              <section className="space-y-4 pt-4 border-t border-stone-100 dark:border-stone-800 animate-fadeIn">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                    Modèle d'Intelligence Artificielle
+                  </h3>
+                  <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    Gestion des Quotas
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+                  Choisissez le modèle d'IA adapté à vos besoins. Pour préserver les quotas d'appels gratuits de votre clé API, privilégiez les versions <b>Flash Lite</b> ou <b>Flash</b>.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    {
+                      id: 'gemini-3.1-flash-lite',
+                      name: 'Gemini 3.1 Flash Lite',
+                      badge: 'Quota Éco ++',
+                      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+                      desc: 'Le plus léger et ultra-rapide. Consomme un minimum de quota. Idéal pour un usage quotidien intensif.',
+                    },
+                    {
+                      id: 'gemini-3.5-flash',
+                      name: 'Gemini 3.5 Flash',
+                      badge: 'Recommandé',
+                      badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300',
+                      desc: 'Excellent équilibre entre rapidité, intelligence et quotas. Parfait pour les résumés et la discussion générale.',
+                    },
+                    {
+                      id: 'gemini-3.1-pro-preview',
+                      name: 'Gemini 3.1 Pro (Preview)',
+                      badge: 'Créatif / Complexe',
+                      badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
+                      desc: 'Le plus intelligent pour le raisonnement complexe. Consomme plus de quota et nécessite parfois une clé payante.',
+                    },
+                    {
+                      id: 'gemini-2.5-flash',
+                      name: 'Gemini 2.5 Flash',
+                      badge: 'Stable',
+                      badgeColor: 'bg-stone-100 text-stone-800 dark:bg-stone-800 dark:text-stone-300',
+                      desc: 'Ancien modèle par défaut stable et polyvalent.',
+                    },
+                  ].map((model) => {
+                    const isSelected = (settings.geminiModel || 'gemini-3.5-flash') === model.id;
+                    return (
+                      <button
+                        key={model.id}
+                        type="button"
+                        onClick={() => onUpdateSettings({ ...settings, geminiModel: model.id as any })}
+                        className={`flex flex-col text-left p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-indigo-500 bg-indigo-50/40 dark:bg-indigo-900/10'
+                            : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-750 bg-white dark:bg-stone-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5 w-full">
+                          <span className={`text-xs font-bold ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-stone-800 dark:text-stone-200'}`}>
+                            {model.name}
+                          </span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${model.badgeColor}`}>
+                            {model.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                          {model.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="space-y-4 pt-4 border-t border-stone-100 dark:border-stone-800">
                 <div className="bg-stone-100/50 dark:bg-stone-900/40 border border-stone-200/50 dark:border-stone-800/80 rounded-2xl p-5 space-y-4 shadow-inner">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider">Guide Clé API</span>
@@ -549,73 +842,87 @@ export default function Settings({
             <div className="space-y-6">
               <section className="space-y-4">
                 <h3 className="text-lg font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                  Notifications locales de rappel
+                  <Bell className="w-5 h-5 text-indigo-500" />
+                  Notifications & Rappels
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Soyez averti(e) par des alertes de votre navigateur dès qu'une tâche planifiée atteint son échéance.
+                  Gérez l'autorisation d'accéder aux notifications système sur votre mobile Android ou navigateur web pour ne rater aucune de vos tâches planifiées.
                 </p>
 
-                {!isNotificationSupported ? (
-                  <div className="p-4 bg-amber-50 dark:bg-amber-950/10 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 rounded-2xl flex items-center gap-3 text-xs">
-                    <BellOff className="w-5 h-5 shrink-0" />
-                    <span>L'API de notifications n'est pas supportée sur ce navigateur ou cette plateforme.</span>
-                  </div>
-                ) : (
-                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 space-y-4 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <h4 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
-                          Rappels automatiques de tâche
-                        </h4>
-                        <p className="text-xs text-stone-500 dark:text-stone-400">
-                          Envoyer une notification lorsque la date limite est atteinte.
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleToggleNotifications}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer ${
-                          settings.enableNotifications && permission === 'granted'
-                            ? 'bg-emerald-500'
-                            : 'bg-stone-200 dark:bg-stone-800'
+                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
+                        Rappels de tâches
+                      </h4>
+                      <p className="text-xs text-stone-500 dark:text-stone-400">
+                        Envoyer une alerte lorsque l'échéance d'une tâche est atteinte.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleToggleNotifications}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer ${
+                        settings.enableNotifications && permission === 'granted'
+                          ? 'bg-emerald-500'
+                          : 'bg-stone-200 dark:bg-stone-800'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          settings.enableNotifications && permission === 'granted' ? 'translate-x-6' : 'translate-x-1'
                         }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.enableNotifications && permission === 'granted' ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-stone-800 text-xs">
-                      <span className="text-stone-500 dark:text-stone-400">
-                        Permission système :{' '}
-                        <span className={`font-semibold ${
-                          permission === 'granted'
-                            ? 'text-emerald-500'
-                            : permission === 'denied'
-                            ? 'text-red-500'
-                            : 'text-amber-500'
-                        }`}>
-                          {permission === 'granted'
-                            ? 'Autorisé'
-                            : permission === 'denied'
-                            ? 'Bloqué'
-                            : 'Non demandé'}
-                        </span>
-                      </span>
-
-                      {permission !== 'granted' && (
-                        <button
-                          onClick={requestPermission}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-lg font-semibold transition-colors cursor-pointer"
-                        >
-                          Autoriser
-                        </button>
-                      )}
-                    </div>
+                      />
+                    </button>
                   </div>
-                )}
+
+                  <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-stone-800 text-xs">
+                    <span className="text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                      Statut des permissions :{' '}
+                      <span className={`font-semibold px-2 py-0.5 rounded-full text-[11px] ${
+                        permission === 'granted'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400'
+                          : permission === 'denied'
+                          ? 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400'
+                          : 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {permission === 'granted'
+                          ? 'Autorisé'
+                          : permission === 'denied'
+                          ? 'Bloqué'
+                          : 'Non demandé'}
+                      </span>
+                    </span>
+
+                    {permission !== 'granted' && (
+                      <button
+                        onClick={requestPermission}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-lg font-semibold transition-colors cursor-pointer"
+                      >
+                        Autoriser
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Android Immersive Notification Preview Showcase */}
+                <div className="bg-stone-50 dark:bg-stone-900/40 border border-stone-200/60 dark:border-stone-800/60 rounded-2xl p-5 space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">
+                      Design d'apparition Android Éminent
+                    </h4>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Les alertes de rappels s'affichent via un design épuré inspiré des dernières notifications d'Android 15, avec un effet de translucidité, une iconographie moderne et des micro-animations fluides.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={triggerTestNotification}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl text-xs shadow-md shadow-indigo-200 dark:shadow-none transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Tester le design de notification Android
+                  </button>
+                </div>
               </section>
             </div>
           )}

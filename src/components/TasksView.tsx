@@ -5,13 +5,14 @@ import { Plus, Check, Calendar, ChevronDown, ChevronRight, CheckCircle2, Circle,
 interface TasksViewProps {
   tasks: Task[];
   taskLists: TaskList[];
-  onAddList: (name: string) => void;
+  onAddList: (name: string, color?: string) => void;
   onAddTask: (listId: string, title: string, priority?: 'high' | 'medium' | 'low') => void;
   onUpdateTask: (id: string, updates: Partial<Task>) => void;
   onDeleteTask: (id: string) => void;
   onGoHome: () => void;
   onOpenRudi: () => void;
   onUpdateTaskListsOrder?: (taskLists: TaskList[]) => void;
+  onOpenNote: (noteId: string) => void;
 }
 
 export default function TasksView({
@@ -28,6 +29,7 @@ export default function TasksView({
   const [activeListId, setActiveListId] = useState<string | null>(taskLists.length > 0 ? taskLists[0].id : null);
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListName, setNewListName] = useState('');
+  const [newListColor, setNewListColor] = useState('#6366f1');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
@@ -83,8 +85,9 @@ export default function TasksView({
   const handleAddList = (e: React.FormEvent) => {
     e.preventDefault();
     if (newListName.trim()) {
-      onAddList(newListName.trim());
+      onAddList(newListName.trim(), newListColor);
       setNewListName('');
+      setNewListColor('#6366f1');
       setIsAddingList(false);
     }
   };
@@ -223,15 +226,21 @@ export default function TasksView({
           })}
           
           {isAddingList ? (
-            <form onSubmit={handleAddList} className="mt-2 px-1">
+            <form onSubmit={handleAddList} className="mt-2 px-1 flex gap-2">
               <input
                 type="text"
                 autoFocus
                 value={newListName}
                 onChange={e => setNewListName(e.target.value)}
-                onBlur={() => setIsAddingList(false)}
                 placeholder="Nouvelle liste..."
                 className="w-full bg-white dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              />
+              <input
+                type="color"
+                value={newListColor}
+                onChange={e => setNewListColor(e.target.value)}
+                className="w-10 h-9 rounded-lg cursor-pointer border-none p-0 bg-transparent"
+                title="Choisir une couleur"
               />
             </form>
           ) : (
@@ -373,6 +382,7 @@ export default function TasksView({
                       key={task.id} 
                       task={task} 
                       listName={taskLists.find(l => l.id === task.listId)?.name}
+                      listColor={taskLists.find(l => l.id === task.listId)?.color}
                       isExpanded={!!expandedTasks[task.id]}
                       onToggleExpand={() => toggleTaskExpanded(task.id)}
                       onUpdate={(updates) => onUpdateTask(task.id, updates)}
@@ -397,12 +407,14 @@ export default function TasksView({
                         key={task.id} 
                         task={task} 
                         listName={taskLists.find(l => l.id === task.listId)?.name}
+                        listColor={taskLists.find(l => l.id === task.listId)?.color}
                         isExpanded={!!expandedTasks[task.id]}
                         onToggleExpand={() => toggleTaskExpanded(task.id)}
                         onUpdate={(updates) => onUpdateTask(task.id, updates)}
                         onDelete={() => onDeleteTask(task.id)}
                         onAddSubTask={(title) => handleAddSubTask(task.id, title)}
                         onToggleSubTask={(stId) => handleToggleSubTask(task.id, stId)}
+                        onOpenNote={onOpenNote}
                       />
                     ))}
                   </div>
@@ -428,7 +440,9 @@ function TaskItem({
   onDelete,
   onAddSubTask,
   onToggleSubTask,
-  listName
+  listName,
+  listColor,
+  onOpenNote
 }: { 
   task: Task; 
   isExpanded: boolean; 
@@ -438,6 +452,8 @@ function TaskItem({
   onAddSubTask: (title: string) => void;
   onToggleSubTask: (id: string) => void;
   listName?: string;
+  listColor?: string;
+  onOpenNote?: (noteId: string) => void;
 }) {
   const [newSubTask, setNewSubTask] = useState('');
 
@@ -465,9 +481,20 @@ function TaskItem({
         
         <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={onToggleExpand}>
           <div className="flex items-center gap-2 flex-wrap">
-            <h4 className={`text-base font-medium truncate ${task.completed ? 'text-stone-400 dark:text-stone-500 line-through' : 'text-stone-900 dark:text-stone-100'}`}>
+            <h4 
+              className={`text-base font-medium ${isExpanded ? 'w-full whitespace-pre-wrap break-words' : 'truncate'} ${task.completed ? 'text-stone-400 dark:text-stone-500 line-through' : 'text-stone-900 dark:text-stone-100'}`}
+              style={{ color: !task.completed && listColor ? listColor : undefined }}
+            >
               {task.title}
             </h4>
+            {task.linkedNoteId && onOpenNote && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); onOpenNote(task.linkedNoteId!); }}
+                className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 rounded-md border border-emerald-200/50 dark:border-emerald-900/30 hover:bg-emerald-100 transition-colors"
+              >
+                Voir Note
+              </button>
+            )}
             {task.priority === 'high' && (
               <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 rounded-md border border-red-200/50 dark:border-red-900/30">
                 Haute

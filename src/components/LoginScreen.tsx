@@ -20,6 +20,9 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Check if we are running in an iframe (AI Studio preview iframe)
+  const isInIframe = window.self !== window.top;
+
   const handleGoogleSignIn = async () => {
     setError(null);
     setLoading(true);
@@ -31,11 +34,13 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/popup-blocked') {
-        setError("La fenêtre de connexion Google a été bloquée par votre navigateur. Veuillez autoriser les popups ou utiliser la connexion par Email.");
+        setError("La fenêtre de connexion Google a été bloquée par votre navigateur. Veuillez autoriser les fenêtres pop-up (popups) ou utiliser la connexion par Email.");
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError("La connexion Google n'est pas encore activée dans Firebase Console, ou est restreinte. Veuillez utiliser la connexion par Email.");
+        setError("La connexion Google n'est pas activée dans votre console Firebase. Veuillez l'activer dans : Console Firebase > Authentication > Sign-in method.");
+      } else if (err.code === 'auth/web-storage-unsupported' || err.message?.includes('storage')) {
+        setError("Le stockage web/cookies tiers sont bloqués par votre navigateur dans cet iframe. Veuillez impérativement ouvrir l'application dans un NOUVEL ONGLET (bouton en haut à droite) pour vous connecter.");
       } else {
-        setError("Erreur lors de la connexion Google. Vous pouvez également vous connecter par Email.");
+        setError(`Erreur lors de la connexion Google : ${err.message || err} (Code: ${err.code || 'inconnu'}). Si vous êtes dans l'aperçu, ouvrez l'application dans un nouvel onglet.`);
       }
     } finally {
       setLoading(false);
@@ -69,14 +74,16 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       }
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError("Email ou mot de passe incorrect.");
       } else if (err.code === 'auth/email-already-in-use') {
         setError("Cette adresse email est déjà associée à un compte.");
       } else if (err.code === 'auth/invalid-email') {
         setError("Format d'adresse email invalide.");
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError("La connexion par Email/Mot de passe n'est pas activée dans votre console Firebase. Veuillez l'activer dans : Console Firebase > Authentication > Sign-in method > Email/Password.");
       } else {
-        setError(err.message || "Une erreur est survenue lors de l'authentification.");
+        setError(`Erreur d'authentification par email : ${err.message || err} (Code: ${err.code || 'inconnu'}).`);
       }
     } finally {
       setLoading(false);
@@ -102,6 +109,17 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             Votre espace d'écriture intelligent, synchronisé partout en temps réel.
           </p>
         </div>
+
+        {/* Warning about Iframe limitations */}
+        {isInIframe && (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 rounded-2xl flex items-start gap-3 text-xs leading-relaxed animate-fadeIn">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <div>
+              <p className="font-bold mb-1">Avis de l'environnement d'aperçu :</p>
+              Pour vous connecter avec Google ou Email, veuillez <span className="font-bold underline">ouvrir l'application dans un nouvel onglet</span> en cliquant sur l'icône de redirection en haut à droite. Les navigateurs bloquent la communication d'authentification au sein des cadres intégrés (iframes).
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-2xl flex items-start gap-3 text-xs animate-fadeIn">

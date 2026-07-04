@@ -9,6 +9,7 @@ export interface AppSettings {
   apiKey: string;
   enableNotifications?: boolean;
   authChoice?: 'local' | 'cloud' | null;
+  geminiModel?: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-3.1-pro-preview' | 'gemini-2.5-flash';
 }
 
 export interface Note {
@@ -18,6 +19,8 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   groupId?: string;
+  linkedTaskId?: string;
+  dueDate?: string;
 }
 
 export interface ChatThread {
@@ -42,10 +45,21 @@ export interface Task {
   createdAt: number;
   updatedAt: number;
   notified?: boolean;
+  linkedNoteId?: string;
 }
 
 export interface TaskList {
   id: string;
   name: string;
+  color?: string;
   createdAt: number;
+}
+
+export interface UserProfile {
+  firstName: string;
+  lastName: string;
+  preferredName?: string;
+  pronoun?: 'il' | 'elle';
+  photoUrl: string | null;
+  isGoogle: boolean;
 }

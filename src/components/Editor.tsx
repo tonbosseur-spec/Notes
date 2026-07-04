@@ -21,26 +21,48 @@ import {
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
-import { Note, NoteGroup } from '../types';
+import { Note, NoteGroup, UserProfile } from '../types';
 
 import ConfirmModal from './ConfirmModal';
 
 interface EditorProps {
   note: Note;
   apiKey: string;
+  geminiModel?: string;
   groups: NoteGroup[];
   onAddGroup: (name: string) => string;
   onUpdate: (updates: Partial<Note>) => void;
   onDelete: () => void;
+  userProfile: UserProfile | null;
+  onLinkTask: (noteId: string) => void;
 }
 
-const MenuBar = ({ editor, onSummarize, onOrganize, isProcessingAi }: { editor: any, onSummarize: () => void, onOrganize: () => void, isProcessingAi: boolean }) => {
+const isMobileDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+};
+
+const MenuBar = ({ 
+  editor, 
+  onSummarize, 
+  onOrganize, 
+  onRewrite, 
+  isProcessingAi,
+  hasSelection
+}: { 
+  editor: any, 
+  onSummarize: () => void, 
+  onOrganize: () => void, 
+  onRewrite: () => void, 
+  isProcessingAi: boolean,
+  hasSelection: boolean
+}) => {
   if (!editor) {
     return null;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1 mb-4 border-b border-stone-200/50 dark:border-stone-800/50 pb-3">
+    <div className="flex flex-wrap items-center gap-1.5 mb-4 border-b border-stone-200/50 dark:border-stone-800/50 pb-3">
       <button
         onClick={() => editor.chain().focus().toggleBold().run()}
         className={`p-1.5 rounded-md transition-colors ${editor.isActive('bold') ? 'bg-stone-200 dark:bg-stone-800 text-stone-900 dark:text-stone-100' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
@@ -97,7 +119,49 @@ const MenuBar = ({ editor, onSummarize, onOrganize, isProcessingAi }: { editor: 
         <ListOrdered className="w-4 h-4" />
       </button>
 
-      <div className="flex-1" />
+      {/* Barre de sélection contextuelle intégrée : évite les conflits de popups sur Android */}
+      {hasSelection && (
+        <>
+          <div className="w-px h-4 bg-stone-200 dark:bg-stone-700 mx-1" />
+          <div className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded-lg border border-indigo-100/40 dark:border-indigo-900/40 transition-all duration-200 animate-fadeIn">
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider px-1 hidden xs:inline">
+              Sélection
+            </span>
+            <button
+              onClick={() => {
+                const text = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
+                navigator.clipboard.writeText(text);
+              }}
+              className="p-1 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded transition-colors"
+              title="Copier la sélection"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => {
+                const text = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
+                navigator.clipboard.writeText(text);
+                editor.chain().focus().deleteSelection().run();
+              }}
+              className="p-1 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded transition-colors"
+              title="Couper la sélection"
+            >
+              <Scissors className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onRewrite}
+              disabled={isProcessingAi}
+              className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors disabled:opacity-50"
+              title="Améliorer la sélection avec Rudi"
+            >
+              {isProcessingAi ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              <span>Rudi</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      <div className="flex-1 min-w-[8px]" />
 
       <button
         onClick={onOrganize}
@@ -121,7 +185,7 @@ const MenuBar = ({ editor, onSummarize, onOrganize, isProcessingAi }: { editor: 
   );
 };
 
-export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onDelete }: EditorProps) {
+export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, onUpdate, onDelete, userProfile }: EditorProps) {
   const [title, setTitle] = useState(note.title);
   const [showMenu, setShowMenu] = useState(false);
   const [isProcessingAi, setIsProcessingAi] = useState(false);
@@ -129,6 +193,7 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
   const currentNoteId = useRef(note.id);
 
   const editor = useEditor({
@@ -142,6 +207,9 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
     onUpdate: ({ editor }) => {
       onUpdate({ content: editor.getHTML() });
     },
+    onSelectionUpdate: ({ editor }) => {
+      setHasSelection(!editor.state.selection.empty);
+    },
   });
 
   // Sync state when note changes from external (e.g. sidebar click)
@@ -153,6 +221,7 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
       setIsProcessingAi(false);
       setIsCreatingGroup(false);
       setNewGroupName('');
+      setHasSelection(false);
       currentNoteId.current = note.id;
       
       if (editor) {
@@ -187,11 +256,14 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
       if (apiKey) {
         headers['x-api-key'] = apiKey;
       }
+      if (geminiModel) {
+        headers['x-gemini-model'] = geminiModel;
+      }
       
       const response = await fetch('/api/ai/summarize', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: editor.getText() }),
+        body: JSON.stringify({ text: editor.getText(), userProfile }),
       });
       
       const data = await response.json();
@@ -220,11 +292,14 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
       if (apiKey) {
         headers['x-api-key'] = apiKey;
       }
+      if (geminiModel) {
+        headers['x-gemini-model'] = geminiModel;
+      }
       
       const response = await fetch('/api/ai/organize', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: editor.getText() }),
+        body: JSON.stringify({ text: editor.getText(), userProfile }),
       });
       
       const data = await response.json();
@@ -258,11 +333,14 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
       if (apiKey) {
         headers['x-api-key'] = apiKey;
       }
+      if (geminiModel) {
+        headers['x-gemini-model'] = geminiModel;
+      }
       
       const response = await fetch('/api/ai/rewrite', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: selectedText }),
+        body: JSON.stringify({ text: selectedText, userProfile }),
       });
       
       const data = await response.json();
@@ -373,10 +451,24 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
         value={title}
         onChange={handleTitleChange}
         placeholder="Titre de la note"
-        className="text-3xl md:text-4xl font-semibold text-stone-900 dark:text-stone-100 bg-transparent border-none outline-none placeholder:text-stone-300 dark:placeholder:text-stone-600 mb-6"
+        className="text-3xl md:text-4xl font-semibold text-stone-900 dark:text-stone-100 bg-transparent border-none outline-none placeholder:text-stone-300 dark:placeholder:text-stone-600 mb-2"
       />
       
-      <MenuBar editor={editor} onSummarize={handleSummarize} onOrganize={handleOrganize} isProcessingAi={isProcessingAi} />
+      <input
+        type="date"
+        value={note.dueDate || ''}
+        onChange={(e) => onUpdate({ dueDate: e.target.value })}
+        className="text-sm text-stone-500 dark:text-stone-400 bg-transparent border border-stone-200 dark:border-stone-700 rounded-lg px-2 py-1 mb-4 w-fit"
+      />
+      
+      <MenuBar 
+        editor={editor} 
+        onSummarize={handleSummarize} 
+        onOrganize={handleOrganize} 
+        onRewrite={handleRewrite}
+        isProcessingAi={isProcessingAi} 
+        hasSelection={hasSelection}
+      />
       
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32 prose-dark">
         {summary && (
@@ -396,7 +488,7 @@ export default function Editor({ note, apiKey, groups, onAddGroup, onUpdate, onD
             </button>
           </div>
         )}
-        {editor && (
+        {editor && !isMobileDevice() && (
           <BubbleMenu editor={editor} className="flex items-center gap-1 p-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg shadow-xl overflow-hidden">
             <button
               onClick={() => editor.chain().focus().toggleBold().run()}

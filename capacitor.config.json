@@ -2,5 +2,11 @@
   "appId": "com.notescopilot.app",
   "appName": "Notes",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "StatusBar": {
+      "visible": false,
+      "overlaysWebView": true
+    }
+  }
 }
