@@ -19,7 +19,6 @@ interface NotesViewProps {
   onOpenRudi: () => void;
   onUpdateNotes: (notes: Note[]) => void;
   userProfile: UserProfile | null;
-  onLinkTask: (noteId: string) => void;
 }
 
 export default function NotesView({

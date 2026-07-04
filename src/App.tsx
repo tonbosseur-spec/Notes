@@ -452,6 +452,17 @@ export default function App() {
     }
   };
 
+  const handleDeleteNotes = (ids: string[]) => {
+    const newNotes = notes.filter(n => !ids.includes(n.id));
+    setNotes(newNotes);
+    if (activeNoteId && ids.includes(activeNoteId)) {
+      setActiveNoteId(null);
+    }
+    if (currentUser) {
+      ids.forEach(id => deleteNoteFromCloud(currentUser.uid, id));
+    }
+  };
+
   const handleAddGroup = (name: string) => {
     const newId = generateUUID();
     const newGroup = { id: newId, name };
@@ -584,6 +595,16 @@ export default function App() {
     setTaskLists(prev => [...prev, newList]);
     if (currentUser) {
       saveTaskListToCloud(currentUser.uid, newList);
+    }
+  };
+
+  const handleRenameTaskList = (listId: string, newName: string) => {
+    setTaskLists(prev => prev.map(l => l.id === listId ? { ...l, name: newName } : l));
+    if (currentUser) {
+      const list = taskLists.find(l => l.id === listId);
+      if (list) {
+        saveTaskListToCloud(currentUser.uid, { ...list, name: newName });
+      }
     }
   };
 
@@ -921,6 +942,9 @@ export default function App() {
         onDeleteTask={handleDeleteTask}
         onDeleteTaskList={handleDeleteTaskList}
         onMergeLists={handleMergeLists}
+        onDeleteNote={handleDeleteNote}
+        onDeleteNotes={handleDeleteNotes}
+        onRenameTaskList={handleRenameTaskList}
       />
 
       {/* Floating Elegant Android-style Notification Stack */}

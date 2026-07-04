@@ -45,33 +45,41 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     setError(null);
     setLoading(true);
     try {
-      if (isAndroid || isInIframe) {
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        const result = await signInWithPopup(auth, googleProvider);
-        if (result.user) {
-          onLoginSuccess(result.user.uid);
-        }
+      // Skill: Prefer signInWithPopup because AI Studio environment allowlists the javascript URL
+      // but doesn't automatically update redirect URLs for signInWithRedirect.
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result.user) {
+        onLoginSuccess(result.user.uid);
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Google Auth Error:", err);
+      
       if (err.code === 'auth/popup-blocked') {
-        setError("La fenêtre de connexion Google a été bloquée par votre navigateur. Veuillez autoriser les fenêtres pop-up (popups) ou utiliser la connexion par Email.");
+        setError("La fenêtre de connexion Google a été bloquée. Veuillez autoriser les popups ou essayer de cliquer à nouveau. Si le problème persiste, utilisez la redirection ci-dessous.");
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError("La connexion Google n'est pas activée dans votre console Firebase. Veuillez l'activer dans : Console Firebase > Authentication > Sign-in method.");
+        setError("La connexion Google n'est pas activée dans la console Firebase. (Authentification > Sign-in method).");
       } else if (err.code === 'auth/web-storage-unsupported' || err.message?.includes('storage')) {
-        setError(isAndroid 
-          ? "Le stockage est bloqué. Veuillez essayer d'ouvrir l'application dans votre navigateur par défaut."
-          : "Le stockage web/cookies tiers sont bloqués par votre navigateur dans cet iframe. Veuillez impérativement ouvrir l'application dans un NOUVEL ONGLET (bouton en haut à droite) pour vous connecter.");
+        setError("Le stockage web ou les cookies tiers sont bloqués. Vous devez impérativement ouvrir l'application dans un NOUVEL ONGLET pour vous connecter.");
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        // Just reset loading
+        setError(null);
       } else {
-        setError(isAndroid
-          ? `Erreur de connexion : ${err.message || err}. Essayez d'ouvrir l'application dans votre navigateur principal.`
-          : `Erreur lors de la connexion Google : ${err.message || err} (Code: ${err.code || 'inconnu'}). Si vous êtes dans l'aperçu, ouvrez l'application dans un nouvel onglet.`);
+        setError(`Erreur (${err.code || 'inconnue'}) : ${err.message || err}. Si vous êtes sur Android ou dans l'aperçu, essayez d'ouvrir dans un nouvel onglet.`);
       }
     } finally {
-      if (!isAndroid && !isInIframe) {
-        setLoading(false);
-      }
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignInRedirect = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error(err);
+      setError(`Erreur de redirection : ${err.message}`);
+      setLoading(false);
     }
   };
 
@@ -152,9 +160,21 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         )}
 
         {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-2xl flex items-start gap-3 text-xs animate-fadeIn">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
+          <div className="space-y-3">
+            <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-2xl flex items-start gap-3 text-xs animate-fadeIn text-left">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+            
+            {/* Fallback for redirection if popup fails */}
+            {!isEmailMode && (
+              <button
+                onClick={handleGoogleSignInRedirect}
+                className="w-full py-2.5 px-4 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 text-[11px] font-bold uppercase tracking-wider rounded-xl hover:bg-stone-200 dark:hover:bg-stone-700 transition-all cursor-pointer"
+              >
+                Essayer la connexion par redirection
+              </button>
+            )}
           </div>
         )}
 

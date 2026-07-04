@@ -11,10 +11,14 @@ app.use(express.json({ limit: '50mb' })); // Increase limit for notes data
 
 const PORT = 3000;
 
-let ai: GoogleGenAI | null = null;
-if (process.env.GEMINI_API_KEY) {
-  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-}
+const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+}) : null;
 
 function getModelName(req: any): string {
   let model = (req.headers['x-gemini-model'] as string) || req.body.model || '';
@@ -34,6 +38,29 @@ function getModelName(req: any): string {
   return 'gemini-3.5-flash';
 }
 
+function formatGeminiError(error: any) {
+  const message = error.message || String(error);
+  console.error("Gemini Error Details:", error);
+  
+  if (message.includes("API key not valid") || message.includes("INVALID_ARGUMENT") && message.includes("key")) {
+    return "La clé API Gemini est invalide ou expirée. Veuillez vérifier votre configuration dans les paramètres.";
+  }
+  if (message.includes("quota") || message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+    return "Le quota de l'API Gemini est dépassé pour aujourd'hui. Vous pourrez réessayer demain ou utiliser votre propre clé API dans les paramètres pour plus de limites.";
+  }
+  if (message.includes("Safety") || message.includes("finishReason: SAFETY") || message.includes("SAFETY")) {
+    return "La réponse a été bloquée par les filtres de sécurité de Google Gemini (contenu potentiellement sensible ou inapproprié).";
+  }
+  if (message.includes("fetch failed") || message.includes("ENOTFOUND") || message.includes("ETIMEDOUT") || message.includes("ECONNREFUSED")) {
+    return "Impossible de contacter les serveurs de Google Gemini. Vérifiez votre connexion internet ou réessayez dans quelques instants.";
+  }
+  if (message.includes("model not found") || message.includes("404")) {
+    return "Le modèle d'IA sélectionné est introuvable ou n'est pas encore disponible dans votre région.";
+  }
+  
+  return "Rudi a rencontré une erreur technique : " + (message.length > 100 ? message.substring(0, 100) + "..." : message);
+}
+
 // AI Summarize API
 app.post("/api/ai/summarize", async (req, res) => {
   let customApiKey = req.headers['x-api-key'] as string;
@@ -41,15 +68,22 @@ app.post("/api/ai/summarize", async (req, res) => {
     customApiKey = '';
   }
   customApiKey = (customApiKey || '').trim();
-  const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
+  const activeAi = customApiKey ? new GoogleGenAI({ 
+    apiKey: customApiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  }) : ai;
 
   if (!activeAi) {
-    return res.status(500).json({ error: "Gemini API key is missing. Veuillez configurer la clé API dans les paramètres." });
+    return res.status(500).json({ error: "Clé API Gemini manquante. Veuillez la configurer dans les paramètres pour utiliser les fonctions IA." });
   }
 
   const { text } = req.body;
   if (!text) {
-    return res.status(400).json({ error: "No text provided." });
+    return res.status(400).json({ error: "Aucun texte fourni pour le résumé." });
   }
 
   try {
@@ -68,8 +102,8 @@ Fournis uniquement le résumé en format texte brut ou markdown très basique, s
 
     res.json({ summary: response.text });
   } catch (error: any) {
-    console.error("Erreur lors de la génération du résumé :", error);
-    res.status(500).json({ error: error.message || "Erreur lors de la génération du résumé." });
+    console.error("Erreur résumé :", error);
+    res.status(500).json({ error: formatGeminiError(error) });
   }
 });
 
@@ -80,15 +114,22 @@ app.post("/api/ai/organize", async (req, res) => {
     customApiKey = '';
   }
   customApiKey = (customApiKey || '').trim();
-  const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
+  const activeAi = customApiKey ? new GoogleGenAI({ 
+    apiKey: customApiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  }) : ai;
 
   if (!activeAi) {
-    return res.status(500).json({ error: "Gemini API key is missing. Veuillez configurer la clé API dans les paramètres." });
+    return res.status(500).json({ error: "Clé API Gemini manquante. Veuillez la configurer dans les paramètres." });
   }
 
   const { text } = req.body;
   if (!text) {
-    return res.status(400).json({ error: "No text provided." });
+    return res.status(400).json({ error: "Aucun texte fourni." });
   }
 
   try {
@@ -115,8 +156,8 @@ Renvoie uniquement le texte formaté en HTML basique compatible avec Tiptap (ex:
 
     res.json({ organizedContent: htmlResult.trim() });
   } catch (error: any) {
-    console.error("Erreur lors de l'organisation :", error);
-    res.status(500).json({ error: error.message || "Erreur lors de l'organisation." });
+    console.error("Erreur organisation :", error);
+    res.status(500).json({ error: formatGeminiError(error) });
   }
 });
 
@@ -127,15 +168,22 @@ app.post("/api/ai/rewrite", async (req, res) => {
     customApiKey = '';
   }
   customApiKey = (customApiKey || '').trim();
-  const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
+  const activeAi = customApiKey ? new GoogleGenAI({ 
+    apiKey: customApiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  }) : ai;
 
   if (!activeAi) {
-    return res.status(500).json({ error: "Gemini API key is missing. Veuillez configurer la clé API dans les paramètres." });
+    return res.status(500).json({ error: "Clé API Gemini manquante. Veuillez la configurer dans les paramètres." });
   }
 
   const { text, prompt } = req.body;
   if (!text) {
-    return res.status(400).json({ error: "No text provided." });
+    return res.status(400).json({ error: "Aucun texte sélectionné." });
   }
 
   try {
@@ -163,8 +211,8 @@ Renvoie uniquement le texte modifié en HTML basique compatible avec Tiptap (ex:
 
     res.json({ text: htmlResult.trim() });
   } catch (error: any) {
-    console.error("Erreur lors de la réécriture :", error);
-    res.status(500).json({ error: error.message || "Erreur lors de la réécriture." });
+    console.error("Erreur réécriture :", error);
+    res.status(500).json({ error: formatGeminiError(error) });
   }
 });
 
@@ -175,15 +223,22 @@ app.post("/api/ai/chat", async (req, res) => {
     customApiKey = '';
   }
   customApiKey = (customApiKey || '').trim();
-  const activeAi = customApiKey ? new GoogleGenAI({ apiKey: customApiKey }) : ai;
+  const activeAi = customApiKey ? new GoogleGenAI({ 
+    apiKey: customApiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  }) : ai;
 
   if (!activeAi) {
-    return res.status(500).json({ error: "Gemini API key is missing. Veuillez configurer la clé API dans les paramètres." });
+    return res.status(500).json({ error: "Clé API Gemini manquante. Veuillez la configurer dans les paramètres." });
   }
 
   const { messages, contextId, notes, groups, tasks = [], taskLists = [] } = req.body;
   if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: "Invalid messages format." });
+    return res.status(400).json({ error: "Format de messages invalide." });
   }
 
   const activeNote = notes.find((n: any) => n.id === contextId);
@@ -208,10 +263,10 @@ ${JSON.stringify(notes.map((n: any) => ({ id: n.id, title: n.title, content: n.c
 
 Tes capacités :
 1. Répondre aux questions sur les notes et les tâches.
-2. Créer des notes avec \`createNote\`, organiser les notes avec \`organizeNotes\`, renommer les notes avec \`renameNote\`.
-3. Créer de nouvelles tâches (avec titre et liste cible) en utilisant \`createTask\`. Si la liste cible n'existe pas, elle sera créée automatiquement. Tu peux définir le niveau de priorité de la tâche ('high', 'medium', 'low').
-4. Modifier les tâches (marquer comme terminée, changer la date/heure limite, les détails, changer le niveau de priorité) en utilisant \`updateTask\`.
-5. Reste dans ton personnage de maniaque du rangement, sois courtois mais pointilleux sur l'organisation.`;
+2. Gérer les notes : \`createNote\`, \`organizeNotes\`, \`renameNote\`, \`modifyNote\`, \`deleteNotes\`.
+3. Gérer les tâches : \`createTask\`, \`createTasks\`.
+4. Actions diverses : \`updateTask\`, \`deleteTask\`, \`deleteTaskList\`, \`renameTaskList\`, \`mergeLists\`.
+5. Reste dans ton personnage de maniaque du rangement.`;
 
   try {
     const modelName = getModelName(req);
@@ -296,6 +351,45 @@ Tes capacités :
               }
             },
             {
+              name: "createTasks",
+              description: "Crée plusieurs tâches d'un coup.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  tasks: {
+                    type: Type.ARRAY,
+                    description: "Liste des tâches à créer",
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING, description: "Le titre de la tâche" },
+                        listName: { type: Type.STRING, description: "Le nom de la liste de tâches où la placer" },
+                        dueDate: { type: Type.STRING, description: "Date et heure limite au format ISO (optionnel)" },
+                        priority: { type: Type.STRING, description: "Priorité: 'high', 'medium', 'low' (optionnel)" }
+                      },
+                      required: ["title", "listName"]
+                    }
+                  }
+                },
+                required: ["tasks"]
+              }
+            },
+            {
+              name: "deleteNotes",
+              description: "Supprime une ou plusieurs notes.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  noteIds: {
+                    type: Type.ARRAY,
+                    description: "Liste des IDs de notes à supprimer",
+                    items: { type: Type.STRING }
+                  }
+                },
+                required: ["noteIds"]
+              }
+            },
+            {
               name: "updateTask",
               description: "Modifie une tâche existante (ex: la marquer comme terminée, changer la date, changer la priorité).",
               parameters: {
@@ -333,6 +427,18 @@ Tes capacités :
               }
             },
             {
+              name: "renameTaskList",
+              description: "Renomme une liste de tâches existante.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  listId: { type: Type.STRING, description: "L'ID de la liste à renommer" },
+                  newName: { type: Type.STRING, description: "Le nouveau nom de la liste" }
+                },
+                required: ["listId", "newName"]
+              }
+            },
+            {
               name: "mergeLists",
               description: "Fusionne deux listes de tâches.",
               parameters: {
@@ -359,10 +465,15 @@ Tes capacités :
     }
   } catch (error: any) {
     console.error("Erreur Rudi Chat:", error);
-    res.status(500).json({ error: error.message || "Erreur lors de la conversation avec Rudi." });
+    res.status(500).json({ error: formatGeminiError(error) });
   }
 });
 
+
+// API 404 handler
+app.all("/api/*", (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+});
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -381,6 +492,15 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  // Global error handler to ensure JSON response
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Global Error:", err);
+    res.status(500).json({ 
+      error: "Une erreur interne du serveur s'est produite.",
+      details: err.message || String(err)
+    });
   });
 }
 

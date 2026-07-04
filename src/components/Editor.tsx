@@ -34,7 +34,6 @@ interface EditorProps {
   onUpdate: (updates: Partial<Note>) => void;
   onDelete: () => void;
   userProfile: UserProfile | null;
-  onLinkTask: (noteId: string) => void;
 }
 
 const isMobileDevice = () => {
@@ -266,10 +265,17 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         body: JSON.stringify({ text: editor.getText(), userProfile }),
       });
       
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
+      }
+
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to summarize');
+        throw new Error(data.error || 'Erreur lors de la génération du résumé');
       }
       
       setSummary(data.summary);
@@ -302,10 +308,17 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         body: JSON.stringify({ text: editor.getText(), userProfile }),
       });
       
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
+      }
+
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to organize');
+        throw new Error(data.error || 'Erreur lors de la réorganisation');
       }
       
       editor.commands.setContent(data.organizedContent);
@@ -343,10 +356,17 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         body: JSON.stringify({ text: selectedText, userProfile }),
       });
       
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
+      }
+
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to rewrite');
+        throw new Error(data.error || 'Erreur lors de la réécriture');
       }
       
       editor.chain().focus().deleteSelection().insertContent(data.text).run();

@@ -25,7 +25,8 @@ export default function TasksView({
   onDeleteTask,
   onGoHome,
   onOpenRudi,
-  onUpdateTaskListsOrder
+  onUpdateTaskListsOrder,
+  onOpenNote
 }: TasksViewProps) {
   const [activeListId, setActiveListId] = useState<string | null>(taskLists.length > 0 ? taskLists[0].id : null);
   const [isAddingList, setIsAddingList] = useState(false);

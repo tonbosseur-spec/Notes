@@ -25,7 +25,10 @@ interface RudiChatProps {
   onDeleteTask?: (taskId: string) => void;
   onDeleteTaskList?: (listId: string) => void;
   onMergeLists?: (sourceListId: string, targetListId: string) => void;
-  onAddTaskList?: (name: string) => string | void; // returns listId ideally, but we can manage inside App.tsx or here
+  onAddTaskList?: (name: string) => string | void;
+  onDeleteNote?: (noteId: string) => void;
+  onDeleteNotes?: (noteIds: string[]) => void;
+  onRenameTaskList?: (listId: string, newName: string) => void;
 }
 
 export default function RudiChat({
@@ -50,7 +53,10 @@ export default function RudiChat({
   onDeleteTask,
   onDeleteTaskList,
   onMergeLists,
-  onAddTaskList
+  onAddTaskList,
+  onDeleteNote,
+  onDeleteNotes,
+  onRenameTaskList
 }: RudiChatProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -97,10 +103,26 @@ export default function RudiChat({
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        
+        if (response.status === 504 || response.status === 502) {
+          throw new Error('Le serveur met trop de temps à répondre (Timeout). Cela peut être dû à une surcharge des serveurs Google Gemini. Veuillez réessayer dans quelques instants.');
+        }
+        if (response.status === 404) {
+          throw new Error('La route API est introuvable. Vérifiez que le serveur est bien démarré.');
+        }
+        
+        throw new Error('Rudi a reçu une réponse invalide du serveur (HTML au lieu de JSON). Cela arrive souvent si la clé API est incorrecte ou si le quota est dépassé.');
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Network response was not ok');
+        // Here data.error is already localized by server.ts if possible
+        throw new Error(data.error || 'Une erreur inconnue est survenue lors de la communication avec Rudi.');
       }
 
       return data;
@@ -169,6 +191,15 @@ export default function RudiChat({
             } else if (name === 'createTask' && onCreateTask) {
               onCreateTask(args.listName, args.title, args.dueDate, args.priority);
               result = { success: true, message: `Tâche '${args.title}' créée avec succès.` } as any;
+            } else if (name === 'createTasks' && onCreateTask) {
+              args.tasks.forEach((t: any) => onCreateTask(t.listName, t.title, t.dueDate, t.priority));
+              result = { success: true, message: `${args.tasks.length} tâches créées avec succès.` } as any;
+            } else if (name === 'deleteNotes' && onDeleteNotes) {
+              onDeleteNotes(args.noteIds);
+              result = { success: true, message: `${args.noteIds.length} notes supprimées avec succès.` } as any;
+            } else if (name === 'deleteNote' && onDeleteNote) {
+              onDeleteNote(args.noteId);
+              result = { success: true, message: `Note supprimée avec succès.` } as any;
             } else if (name === 'updateTask' && onUpdateTask) {
               onUpdateTask(args.taskId, { 
                 ...(args.completed !== undefined ? { completed: args.completed } : {}),
@@ -183,6 +214,9 @@ export default function RudiChat({
             } else if (name === 'deleteTaskList' && onDeleteTaskList) {
               onDeleteTaskList(args.listId);
               result = { success: true, message: `Liste supprimée avec succès.` } as any;
+            } else if (name === 'renameTaskList' && onRenameTaskList) {
+              onRenameTaskList(args.listId, args.newName);
+              result = { success: true, message: `Liste renommée avec succès.` } as any;
             } else if (name === 'mergeLists' && onMergeLists) {
               onMergeLists(args.sourceListId, args.targetListId);
               result = { success: true, message: `Listes fusionnées avec succès.` } as any;
