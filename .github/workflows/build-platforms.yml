@@ -102,7 +102,7 @@ jobs:
       - name: Install Capacitor CLI & Android Platform
         run: |
           npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init Notes com.notescopilot.app --web-dir=dist --confirm
+          npx cap init Notes com.notescopilot.app --web-dir=dist
           npx cap add android
 
       - name: Sync Capacitor
