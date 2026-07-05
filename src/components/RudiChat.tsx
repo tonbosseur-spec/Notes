@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User, Loader2 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { Note, NoteGroup, Task, TaskList, UserProfile } from '../types';
+import { chatWithRudi } from '../lib/aiClient';
 
 interface RudiChatProps {
   isOpen: boolean;
@@ -81,50 +82,17 @@ export default function RudiChat({
 
   const sendMessageToApi = async (currentMessages: any[]) => {
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-      };
-      if (geminiModel) {
-        headers['x-gemini-model'] = geminiModel;
-      }
-
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          messages: currentMessages,
-          contextId,
-          notes,
-          groups,
-          tasks,
-          taskLists,
-          model: geminiModel
-        }),
-      });
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        
-        if (response.status === 504 || response.status === 502) {
-          throw new Error('Le serveur met trop de temps à répondre (Timeout). Cela peut être dû à une surcharge des serveurs Google Gemini. Veuillez réessayer dans quelques instants.');
-        }
-        if (response.status === 404) {
-          throw new Error('La route API est introuvable. Vérifiez que le serveur est bien démarré.');
-        }
-        
-        throw new Error('Rudi a reçu une réponse invalide du serveur (HTML au lieu de JSON). Cela arrive souvent si la clé API est incorrecte ou si le quota est dépassé.');
-      }
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Here data.error is already localized by server.ts if possible
-        throw new Error(data.error || 'Une erreur inconnue est survenue lors de la communication avec Rudi.');
-      }
-
+      const data = await chatWithRudi(
+        currentMessages,
+        contextId,
+        notes,
+        groups,
+        tasks,
+        taskLists,
+        apiKey,
+        geminiModel,
+        userProfile
+      );
       return data;
     } catch (error: any) {
       console.error("Erreur:", error);

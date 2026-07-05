@@ -32,6 +32,7 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Note, NoteGroup, UserProfile, Task } from '../types';
+import { summarizeNote, organizeNote, rewriteText } from '../lib/aiClient';
 
 import ConfirmModal from './ConfirmModal';
 import AttachmentsList from './AttachmentsList';
@@ -420,35 +421,7 @@ export default function Editor({ note, notes = [], tasks = [], apiKey, geminiMod
     
     setIsProcessingAi(true);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (apiKey) {
-        headers['x-api-key'] = apiKey;
-      }
-      if (geminiModel) {
-        headers['x-gemini-model'] = geminiModel;
-      }
-      
-      const response = await fetch('/api/ai/summarize', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ text: editor.getText(), userProfile }),
-      });
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
-      }
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la génération du résumé');
-      }
-      
+      const data = await summarizeNote(editor.getText(), userProfile, apiKey, geminiModel);
       setSummary(data.summary);
     } catch (error: any) {
       console.error(error);
@@ -463,35 +436,7 @@ export default function Editor({ note, notes = [], tasks = [], apiKey, geminiMod
     
     setIsProcessingAi(true);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (apiKey) {
-        headers['x-api-key'] = apiKey;
-      }
-      if (geminiModel) {
-        headers['x-gemini-model'] = geminiModel;
-      }
-      
-      const response = await fetch('/api/ai/organize', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ text: editor.getText(), userProfile }),
-      });
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
-      }
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la réorganisation');
-      }
-      
+      const data = await organizeNote(editor.getText(), userProfile, apiKey, geminiModel);
       editor.commands.setContent(data.organizedContent);
     } catch (error: any) {
       console.error(error);
@@ -511,35 +456,7 @@ export default function Editor({ note, notes = [], tasks = [], apiKey, geminiMod
 
     setIsProcessingAi(true);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (apiKey) {
-        headers['x-api-key'] = apiKey;
-      }
-      if (geminiModel) {
-        headers['x-gemini-model'] = geminiModel;
-      }
-      
-      const response = await fetch('/api/ai/rewrite', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ text: selectedText, userProfile }),
-      });
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        throw new Error('Le serveur a renvoyé une réponse invalide (HTML au lieu de JSON).');
-      }
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la réécriture');
-      }
-      
+      const data = await rewriteText(selectedText, undefined, userProfile, apiKey, geminiModel);
       editor.chain().focus().deleteSelection().insertContent(data.text).run();
     } catch (error: any) {
       console.error(error);
