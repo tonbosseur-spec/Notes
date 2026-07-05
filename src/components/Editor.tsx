@@ -23,17 +23,24 @@ import {
   Unlock,
   Shield,
   Key,
-  ShieldAlert
+  ShieldAlert,
+  Link as LinkIcon,
+  Paperclip
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
-import { Note, NoteGroup, UserProfile } from '../types';
+import Link from '@tiptap/extension-link';
+import { Note, NoteGroup, UserProfile, Task } from '../types';
 
 import ConfirmModal from './ConfirmModal';
+import AttachmentsList from './AttachmentsList';
+import LinkModal from './LinkModal';
 
 interface EditorProps {
   note: Note;
+  notes?: Note[];
+  tasks?: Task[];
   apiKey: string;
   geminiModel?: string;
   groups: NoteGroup[];
@@ -54,14 +61,16 @@ const MenuBar = ({
   onOrganize, 
   onRewrite, 
   isProcessingAi,
-  hasSelection
+  hasSelection,
+  onOpenLinkModal
 }: { 
   editor: any, 
   onSummarize: () => void, 
   onOrganize: () => void, 
   onRewrite: () => void, 
   isProcessingAi: boolean,
-  hasSelection: boolean
+  hasSelection: boolean,
+  onOpenLinkModal: () => void
 }) => {
   if (!editor) {
     return null;
@@ -123,6 +132,24 @@ const MenuBar = ({
         title="Liste numérotée"
       >
         <ListOrdered className="w-4 h-4" />
+      </button>
+
+      <div className="w-px h-4 bg-stone-200 dark:bg-stone-700 mx-1" />
+
+      <button
+        onClick={onOpenLinkModal}
+        className={`p-1.5 rounded-md transition-colors ${editor.isActive('link') ? 'bg-stone-200 dark:bg-stone-800 text-stone-900 dark:text-stone-100' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
+        title="Insérer un lien"
+      >
+        <LinkIcon className="w-4 h-4" />
+      </button>
+
+      <button
+        onClick={() => document.getElementById('attachment-file-input')?.click()}
+        className="p-1.5 rounded-md transition-colors text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800"
+        title="Joindre un fichier"
+      >
+        <Paperclip className="w-4 h-4" />
       </button>
 
       {/* Barre de sélection contextuelle intégrée : évite les conflits de popups sur Android */}
@@ -191,7 +218,7 @@ const MenuBar = ({
   );
 };
 
-export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, onUpdate, onDelete, userProfile }: EditorProps) {
+export default function Editor({ note, notes = [], tasks = [], apiKey, geminiModel, groups, onAddGroup, onUpdate, onDelete, userProfile }: EditorProps) {
   const [title, setTitle] = useState(note.title);
   const [showMenu, setShowMenu] = useState(false);
   const [isProcessingAi, setIsProcessingAi] = useState(false);
@@ -205,15 +232,66 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
   const [lockPassword, setLockPassword] = useState('');
   const [isLockingModalOpen, setIsLockingModalOpen] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkModalData, setLinkModalData] = useState({ text: '', url: '' });
   const currentNoteId = useRef(note.id);
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Link.configure({
+        openOnClick: false,
+        protocols: ['task', 'note'],
+        validate: href => true,
+        HTMLAttributes: {
+          class: 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline underline-offset-2 transition-colors cursor-pointer',
+        },
+      })
+    ],
     content: note.content,
     editorProps: {
       attributes: {
         class: 'text-base md:text-lg leading-relaxed text-stone-700 dark:text-stone-300 bg-transparent border-none outline-none resize-none',
       },
+      handleClick: (view, pos, event) => {
+        const target = event.target as HTMLElement;
+        const a = target.closest('a');
+        if (a) {
+          event.preventDefault();
+          event.stopPropagation();
+          const href = a.getAttribute('href');
+          if (href) {
+            try {
+              const url = new URL(href);
+              if (['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol)) {
+                window.open(href, '_blank', 'noopener,noreferrer');
+                return true;
+              }
+            } catch {}
+
+            if (href.startsWith('task:')) {
+              let title = href.substring(5);
+              try { title = decodeURIComponent(title); } catch {}
+              const customEvent = new CustomEvent('open-or-create-task', { detail: { title } });
+              window.dispatchEvent(customEvent);
+              return true;
+            } else if (href.startsWith('note:')) {
+              let title = href.substring(5);
+              try { title = decodeURIComponent(title); } catch {}
+              const customEvent = new CustomEvent('open-or-create-note', { detail: { title } });
+              window.dispatchEvent(customEvent);
+              return true;
+            } else {
+              let title = href;
+              try { title = decodeURIComponent(title); } catch {}
+              const customEvent = new CustomEvent('open-or-create-note', { detail: { title } });
+              window.dispatchEvent(customEvent);
+              return true;
+            }
+          }
+        }
+        return false;
+      }
     },
     onUpdate: ({ editor }) => {
       onUpdate({ content: editor.getHTML() });
@@ -243,6 +321,50 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
       }
     }
   }, [note.id, note.title, note.content, editor]);
+
+  const handleOpenLinkModal = () => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+    const previousUrl = editor.getAttributes('link').href || '';
+    setLinkModalData({ text: selectedText || '', url: previousUrl });
+    setIsLinkModalOpen(true);
+  };
+
+  const handleSaveLink = (text: string, url: string) => {
+    if (!editor) return;
+    
+    // If text was provided and nothing was selected, insert the text
+    if (editor.state.selection.empty && text) {
+      editor.chain().focus().insertContent(text).run();
+      
+      // Select the inserted text to apply the link
+      const { from } = editor.state.selection;
+      // We inserted text, so cursor is at the end. We need to select the text we just inserted.
+      editor.chain().focus().setTextSelection({ from: from - text.length, to: from }).run();
+    } else if (!editor.state.selection.empty && text) {
+      // If there was a selection, and text is different, replace it. 
+      // Actually ProseMirror handles this a bit complex. For simplicity, just set the link on current selection.
+      // Or if text is changed, we can insert the new text.
+      const currentSelectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
+      if (text !== currentSelectedText) {
+        editor.chain().focus().insertContent(text).run();
+        const { from } = editor.state.selection;
+        editor.chain().focus().setTextSelection({ from: from - text.length, to: from }).run();
+      }
+    }
+
+    if (url) {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+    }
+    
+    // Move cursor to the end of the link
+    editor.chain().focus().setTextSelection(editor.state.selection.to).run();
+    
+    setIsLinkModalOpen(false);
+  };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
@@ -615,6 +737,7 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         onRewrite={handleRewrite}
         isProcessingAi={isProcessingAi} 
         hasSelection={hasSelection}
+        onOpenLinkModal={handleOpenLinkModal}
       />
       
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32 prose-dark">
@@ -665,6 +788,13 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
               <Copy className="w-4 h-4" />
             </button>
             <button
+              onClick={handleOpenLinkModal}
+              className={`p-1.5 rounded-md transition-colors ${editor.isActive('link') ? 'bg-stone-200 dark:bg-stone-800 text-stone-900 dark:text-stone-100' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
+              title="Insérer un lien"
+            >
+              <LinkIcon className="w-4 h-4" />
+            </button>
+            <button
               onClick={() => {
                 const text = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
                 navigator.clipboard.writeText(text);
@@ -689,7 +819,14 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
             </button>
           </BubbleMenu>
         )}
-        <EditorContent editor={editor} />
+        <div className="prose dark:prose-invert max-w-none">
+          <EditorContent editor={editor} />
+        </div>
+        
+        <AttachmentsList 
+          attachments={note.attachments || []} 
+          onUpdate={(attachments) => onUpdate({ attachments })} 
+        />
       </div>
     </>
   )}
@@ -757,6 +894,17 @@ export default function Editor({ note, apiKey, geminiModel, groups, onAddGroup, 
         onDelete();
       }}
       onCancel={() => setShowDeleteConfirm(false)}
+    />
+
+    <LinkModal
+      isOpen={isLinkModalOpen}
+      initialText={linkModalData.text}
+      initialUrl={linkModalData.url}
+      notes={notes}
+      tasks={tasks}
+      onClose={() => setIsLinkModalOpen(false)}
+      onSave={handleSaveLink}
+      onRemove={() => handleSaveLink('', '')}
     />
   </div>
 );

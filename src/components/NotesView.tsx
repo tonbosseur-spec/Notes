@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Bot, FileText, Folder, PenTool, Plus, ChevronRight, Activity, Calendar, Home as HomeIcon, Tag, Lock } from 'lucide-react';
-import { Note, NoteGroup, UserProfile } from '../types';
+import { Note, NoteGroup, UserProfile, Task } from '../types';
 import Sidebar from './Sidebar';
 import Editor from './Editor';
+import { generateUUID } from '../lib/utils';
 
 interface NotesViewProps {
   notes: Note[];
+  tasks: Task[];
   activeNoteId: string | null;
   apiKey: string;
   geminiModel?: string;
@@ -23,6 +25,7 @@ interface NotesViewProps {
 
 export default function NotesView({
   notes,
+  tasks,
   activeNoteId,
   apiKey,
   geminiModel,
@@ -77,7 +80,7 @@ export default function NotesView({
   const ungroupedCount = notes.filter(n => !n.groupId).length;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden relative bg-stone-50 dark:bg-stone-950 flex-col md:flex-row">
+    <div className="flex fixed inset-0 w-full overflow-hidden bg-stone-50 dark:bg-stone-950 flex-col md:flex-row">
       {/* Mobile subheader when no note is selected */}
       {!activeNote && (
         <div className="flex md:hidden bg-stone-100 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 p-2 gap-2 shrink-0 items-center">
@@ -115,7 +118,7 @@ export default function NotesView({
       {/* Sidebar (List) */}
       <div className={`
         ${activeNote ? 'hidden md:flex' : (mobileTab === 'notes' ? 'flex' : 'hidden md:flex')}
-        flex-col w-full md:w-72 bg-stone-100 dark:bg-stone-900 border-r border-stone-200 dark:border-stone-800 h-full shrink-0
+        flex-col w-full md:w-72 bg-stone-100 dark:bg-stone-900 border-r border-stone-200 dark:border-stone-800 flex-1 md:h-full shrink-0 min-h-0
       `}>
         <div className="p-4 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center bg-stone-50/80 dark:bg-stone-900/80">
           <button 
@@ -125,7 +128,7 @@ export default function NotesView({
             <ArrowLeft className="w-4 h-4" /> Accueil
           </button>
         </div>
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
           <Sidebar 
             notes={notes} 
             groups={groups}
@@ -182,6 +185,8 @@ export default function NotesView({
           {activeNote ? (
             <Editor 
               note={activeNote} 
+              notes={notes}
+              tasks={tasks}
               apiKey={apiKey}
               geminiModel={geminiModel}
               groups={groups}

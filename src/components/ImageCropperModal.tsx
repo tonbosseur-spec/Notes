@@ -68,45 +68,31 @@ export default function ImageCropperModal({ imageSrc, onCrop, onClose }: ImageCr
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Draw background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 256, 256);
-
-    // Set origin to center of canvas for rotation and scale
+    // Set origin to center of canvas
     ctx.translate(128, 128);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(zoom, zoom);
 
-    // Compute size matching 128 width/height offset
-    // The visual crop circle has a radius of 80px in a 220px box (approx 72%)
-    // Let's calibrate so the crop captures exactly what is inside the visual circle
-    const visualCircleRadius = 80;
-    const containerHalfSize = 110;
+    // Scaling factor: Visual circle is 160px, Canvas is 256px.
+    const scaleFactor = 256 / 160;
     
-    // Scale factor between visual preview and canvas
-    const cropScale = 128 / visualCircleRadius;
+    // The image in preview has a fixed width of 180px
+    const baseWidthOnCanvas = 180 * scaleFactor;
+    const aspectRatio = img.naturalHeight / img.naturalWidth;
+    const baseHeightOnCanvas = baseWidthOnCanvas * aspectRatio;
 
-    // Position of image relative to crop center
-    const drawX = (posX - (containerHalfSize - visualCircleRadius)) * cropScale;
-    const drawY = (posY - (containerHalfSize - visualCircleRadius)) * cropScale;
-
-    // We want the natural size of the image scaled down to fit the preview crop circle
-    // Let's calculate proper default width/height
-    const minDim = Math.min(img.naturalWidth, img.naturalHeight) || 200;
-    const renderWidth = (img.naturalWidth / minDim) * 200;
-    const renderHeight = (img.naturalHeight / minDim) * 200;
-
-    // Offset coordinates to align image center
+    // Draw image centered but offset by the user's drag position
     ctx.drawImage(
       img,
-      -renderWidth / 2 + posX * cropScale,
-      -renderHeight / 2 + posY * cropScale,
-      renderWidth,
-      renderHeight
+      (posX * scaleFactor) - (baseWidthOnCanvas / 2),
+      (posY * scaleFactor) - (baseHeightOnCanvas / 2),
+      baseWidthOnCanvas,
+      baseHeightOnCanvas
     );
 
     try {
-      const croppedBase64 = canvas.toDataURL('image/jpeg', 0.9);
+      // Use PNG for transparency to avoid "white frame" corners
+      const croppedBase64 = canvas.toDataURL('image/png');
       onCrop(croppedBase64);
     } catch (err) {
       console.error("Canvas export failed:", err);
@@ -230,6 +216,18 @@ export default function ImageCropperModal({ imageSrc, onCrop, onClose }: ImageCr
               />
             </div>
           </div>
+
+          <button
+            onClick={() => {
+              setZoom(1);
+              setRotation(0);
+              setPosX(0);
+              setPosY(0);
+            }}
+            className="w-full py-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-[10px] font-bold uppercase tracking-wider transition-colors"
+          >
+            Réinitialiser les réglages
+          </button>
         </div>
 
         {/* Action Buttons */}

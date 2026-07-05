@@ -1,5 +1,5 @@
 import { Plus, Search, Folder, ChevronDown, ChevronRight, GripVertical, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Note, NoteGroup } from '../types';
 
 interface SidebarProps {
@@ -22,6 +22,14 @@ export default function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   
   // Extract unique tags
   const allTags = Array.from(new Set(notes.map(n => n.tag).filter(Boolean))) as string[];
@@ -160,8 +168,8 @@ export default function Sidebar({
   const renderNote = (note: Note) => (
     <div
       key={note.id}
-      draggable
-      onDragStart={(e) => handleNoteDragStart(e, note.id)}
+      draggable={!isMobile}
+      onDragStart={(e) => { if (!isMobile) handleNoteDragStart(e, note.id); }}
       onDragOver={(e) => handleNoteDragOver(e, note.id)}
       onDrop={(e) => handleNoteDrop(e, note.id)}
       onDragEnd={handleNoteDragEnd}
@@ -203,7 +211,7 @@ export default function Sidebar({
   );
 
   return (
-    <div className="h-full flex flex-col bg-stone-50/80 dark:bg-stone-900/80 backdrop-blur-xl">
+    <div className="flex-1 min-h-0 flex flex-col bg-stone-50/80 dark:bg-stone-900/80 backdrop-blur-xl">
       <div 
         onDragOver={handleRootDragOver}
         onDrop={handleRootDrop}
@@ -271,7 +279,7 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-4 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-2 pb-32 space-y-4">
         {filteredNotes.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-stone-500 dark:text-stone-400">
             {searchQuery ? 'Aucune note ne correspond à votre recherche.' : 'Aucune note. Cliquez sur + pour en créer une.'}

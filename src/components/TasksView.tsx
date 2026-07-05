@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task, TaskList, SubTask } from '../types';
 import { generateUUID } from '../lib/utils';
-import { Plus, Check, Calendar, ChevronDown, ChevronRight, CheckCircle2, Circle, MoreVertical, Clock, X, Trash2, Home, Bot, CheckSquare, Menu, GripVertical } from 'lucide-react';
+import { Plus, Check, Calendar, ChevronDown, ChevronRight, CheckCircle2, Circle, MoreVertical, Clock, X, Trash2, Home, Bot, CheckSquare, Menu, GripVertical, Edit2 } from 'lucide-react';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -10,6 +10,8 @@ interface TasksViewProps {
   onAddTask: (listId: string, title: string, priority?: 'high' | 'medium' | 'low') => void;
   onUpdateTask: (id: string, updates: Partial<Task>) => void;
   onDeleteTask: (id: string) => void;
+  onRenameTaskList?: (id: string, newName: string) => void;
+  onDeleteTaskList?: (id: string) => void;
   onGoHome: () => void;
   onOpenRudi: () => void;
   onUpdateTaskListsOrder?: (taskLists: TaskList[]) => void;
@@ -23,6 +25,8 @@ export default function TasksView({
   onAddTask,
   onUpdateTask,
   onDeleteTask,
+  onRenameTaskList,
+  onDeleteTaskList,
   onGoHome,
   onOpenRudi,
   onUpdateTaskListsOrder,
@@ -36,6 +40,18 @@ export default function TasksView({
   const [newTaskPriority, setNewTaskPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
+  // List edit states
+  const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editListName, setEditListName] = useState('');
 
   // Drag and drop states for task lists
   const [draggedListId, setDraggedListId] = useState<string | null>(null);
@@ -124,6 +140,22 @@ export default function TasksView({
     onUpdateTask(taskId, { subTasks: newSubTasks });
   };
 
+  const handleRenameSubmit = (e: React.FormEvent, listId: string) => {
+    e.preventDefault();
+    if (editListName.trim() && onRenameTaskList) {
+      onRenameTaskList(listId, editListName.trim());
+    }
+    setEditingListId(null);
+  };
+
+  const handleDeleteList = (e: React.MouseEvent, listId: string) => {
+    e.stopPropagation();
+    if (confirm("Voulez-vous vraiment supprimer cette liste et toutes ses tâches ?")) {
+      if (onDeleteTaskList) onDeleteTaskList(listId);
+      if (activeListId === listId) setActiveListId('all');
+    }
+  };
+
   const priorityWeight = { high: 3, medium: 2, low: 1 };
 
   const activeTasks = tasks
@@ -140,7 +172,7 @@ export default function TasksView({
     .sort((a, b) => b.createdAt - a.createdAt);
 
   return (
-    <div className="flex h-screen bg-stone-50 dark:bg-stone-950 overflow-hidden relative">
+    <div className="flex fixed inset-0 bg-stone-50 dark:bg-stone-950 overflow-hidden">
       {/* Sidebar Backdrop on mobile */}
       {isSidebarOpen && (
         <div 
@@ -172,7 +204,7 @@ export default function TasksView({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+        <div className="flex-1 overflow-y-auto p-3 pb-32 space-y-1">
           <button
             onClick={() => {
               setActiveListId('all');
@@ -193,11 +225,13 @@ export default function TasksView({
           {taskLists.map(list => {
             const isDragged = draggedListId === list.id;
             const isDragOver = dragOverListId === list.id;
+            const isEditing = editingListId === list.id;
+            
             return (
               <div
                 key={list.id}
-                draggable
-                onDragStart={(e) => handleListDragStart(e, list.id)}
+                draggable={!isEditing && !isMobile}
+                onDragStart={(e) => { if(!isEditing && !isMobile) handleListDragStart(e, list.id); }}
                 onDragOver={(e) => handleListDragOver(e, list.id)}
                 onDrop={(e) => handleListDrop(e, list.id)}
                 onDragEnd={handleListDragEnd}
@@ -207,22 +241,55 @@ export default function TasksView({
                   isDragOver ? 'border-t-2 border-indigo-500 pt-1' : ''
                 }`}
               >
-                <button
-                  onClick={() => {
-                    setActiveListId(list.id);
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors pr-8 flex items-center justify-between ${
-                    activeListId === list.id 
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                      : 'text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  <span className="truncate">{list.name}</span>
-                </button>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/list:opacity-100 transition-opacity pointer-events-none cursor-grab active:cursor-grabbing text-stone-400">
-                  <GripVertical className="w-3.5 h-3.5" />
-                </div>
+                {isEditing ? (
+                  <form onSubmit={(e) => handleRenameSubmit(e, list.id)} className="flex items-center gap-1 px-1 py-1">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editListName}
+                      onChange={(e) => setEditListName(e.target.value)}
+                      onBlur={(e) => handleRenameSubmit(e, list.id)}
+                      className="w-full bg-white dark:bg-stone-900 border border-indigo-300 dark:border-indigo-700 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setActiveListId(list.id);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors pr-20 flex items-center justify-between ${
+                        activeListId === list.id 
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                          : 'text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-800'
+                      }`}
+                    >
+                      <span className="truncate">{list.name}</span>
+                    </button>
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/list:opacity-100 transition-opacity">
+                      <button 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEditListName(list.name); setEditingListId(list.id); }}
+                        className="p-1 text-stone-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-stone-800 rounded transition-colors"
+                        title="Renommer la liste"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={(e) => handleDeleteList(e, list.id)}
+                        className="p-1 text-stone-400 hover:text-red-600 hover:bg-white dark:hover:bg-stone-800 rounded transition-colors"
+                        title="Supprimer la liste"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="p-1 text-stone-400 cursor-grab active:cursor-grabbing hover:bg-white dark:hover:bg-stone-800 rounded transition-colors">
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -260,7 +327,7 @@ export default function TasksView({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden w-full">
         {activeListId ? (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 max-w-4xl mx-auto w-full">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 pb-32 max-w-4xl mx-auto w-full">
             <header className="mb-8 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button

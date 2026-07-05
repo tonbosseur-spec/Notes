@@ -41,10 +41,7 @@ interface SettingsProps {
   userProfile: UserProfile | null;
   onUpdateUserProfile: (updates: Partial<UserProfile>) => void;
   
-  // Sync & Cloud props
-  currentUser: any | null;
-  onSignOut: () => void;
-  onSignInWithCloud: () => void;
+  // Backup props
   onExportNts: () => void;
   onImportNts: (data: {
     notes: any[];
@@ -67,9 +64,6 @@ export default function Settings({
   onImportNotes,
   userProfile,
   onUpdateUserProfile,
-  currentUser,
-  onSignOut,
-  onSignInWithCloud,
   onExportNts,
   onImportNts
 }: SettingsProps) {
@@ -429,8 +423,8 @@ export default function Settings({
                 : 'border-transparent text-stone-500 hover:text-stone-900 dark:hover:text-stone-200'
             }`}
           >
-            <Cloud className="w-4 h-4" />
-            <span className="hidden md:inline">Sauvegarde & Synchro</span>
+            <Folder className="w-4 h-4" />
+            <span className="hidden md:inline">Sauvegarde & Export</span>
           </button>
         </div>
 
@@ -927,66 +921,12 @@ export default function Settings({
             </div>
           )}
 
-          {/* TAB 5: BACKUP & SYNC */}
+          {/* TAB: BACKUP & EXPORT */}
           {activeTab === 'backup' && (
             <div className="space-y-6">
-              {/* Cloud Sync Account Management */}
               <section className="space-y-4">
                 <h3 className="text-lg font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                  Synchronisation Cloud (Firebase)
-                </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Connectez-vous à votre compte Google ou Email pour synchroniser vos notes, dossiers et listes de tâches en temps réel sur tous vos appareils.
-                </p>
-
-                {currentUser ? (
-                  <div className="bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100/80 dark:border-emerald-900/30 rounded-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center font-bold">
-                          {currentUser.email ? currentUser.email[0].toUpperCase() : <User className="w-5 h-5" />}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-stone-800 dark:text-stone-200">Compte connecté</div>
-                          <div className="text-xs text-stone-500 dark:text-stone-400 truncate max-w-xs">{currentUser.email}</div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={onSignOut}
-                        className="p-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-300 rounded-xl transition-colors text-xs font-bold flex items-center gap-2 cursor-pointer"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Se déconnecter</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/5 py-1 px-3 rounded-lg w-fit">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Synchronisation en temps réel active</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 space-y-4 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-bold text-stone-800 dark:text-stone-200">Mode Local</h4>
-                        <p className="text-xs text-stone-500 dark:text-stone-400">Vos données sont actuellement sauvées uniquement sur cet appareil.</p>
-                      </div>
-                      <button
-                        onClick={onSignInWithCloud}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
-                      >
-                        <LogIn className="w-4 h-4" />
-                        <span>Se connecter</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </section>
-
-              {/* Private .NTS Manual Export & Import */}
-              <section className="space-y-4 pt-6 border-t border-stone-200 dark:border-stone-800">
-                <h3 className="text-lg font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                  <Folder className="w-5 h-5 text-indigo-500" />
                   Sauvegarde & Restauration manuelle
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
@@ -1006,7 +946,6 @@ export default function Settings({
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-3">
-                  {/* Export Button */}
                   <button
                     onClick={onExportNts}
                     className="flex-1 py-3 px-4 bg-stone-900 hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-stone-200 text-white dark:text-stone-950 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
@@ -1015,7 +954,6 @@ export default function Settings({
                     <span>Exporter mon espace (.nts)</span>
                   </button>
 
-                  {/* Import Input */}
                   <div className="flex-1 relative">
                     <input
                       type="file"

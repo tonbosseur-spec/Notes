@@ -12,6 +12,14 @@ export interface AppSettings {
   geminiModel?: 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-3.1-pro-preview' | 'gemini-2.5-flash';
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  size: number;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -24,6 +32,7 @@ export interface Note {
   tag?: string;
   isLocked?: boolean;
   password?: string;
+  attachments?: Attachment[];
 }
 
 export interface ChatThread {
@@ -61,6 +70,7 @@ export interface TaskList {
 export interface UserProfile {
   firstName: string;
   lastName: string;
+  username?: string;
   preferredName?: string;
   pronoun?: 'il' | 'elle';
   photoUrl: string | null;

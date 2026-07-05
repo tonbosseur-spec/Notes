@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Edit2, Upload, Chrome } from 'lucide-react';
+import { Camera, Edit2, Upload, Chrome, UserCircle } from 'lucide-react';
 import { UserProfile } from '../types';
 import ImageCropperModal from './ImageCropperModal';
 
@@ -53,12 +53,12 @@ export default function UserProfileBlock({ profile, onUpdateProfile, editable = 
       <div className="relative shrink-0">
         <div 
           onClick={() => {
-            if (editable && !isGoogle) {
+            if (editable) {
               fileInputRef.current?.click();
             }
           }}
-          className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm relative group flex items-center justify-center bg-stone-100 dark:bg-stone-800 ${
-            editable && !isGoogle ? 'cursor-pointer hover:border-indigo-500 hover:scale-[1.02] transition-all' : ''
+          className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden relative group flex items-center justify-center bg-stone-100 dark:bg-stone-850 border border-stone-200 dark:border-stone-800 ${
+            editable ? 'cursor-pointer hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all' : ''
           }`}
         >
           {photoUrl ? (
@@ -66,16 +66,16 @@ export default function UserProfileBlock({ profile, onUpdateProfile, editable = 
               src={photoUrl} 
               alt={`${firstName} ${lastName}`} 
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover block"
             />
           ) : (
-            <div className="text-2xl sm:text-3xl font-extrabold text-indigo-500 dark:text-indigo-400 capitalize">
-              {firstName.charAt(0)}{lastName.charAt(0)}
+            <div className="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500">
+              <UserCircle className="w-10 h-10 sm:w-12 sm:h-12" />
             </div>
           )}
 
-          {/* Edit overlay only if editable and NOT a Google account */}
-          {editable && !isGoogle && (
+          {/* Edit overlay */}
+          {editable && (
             <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-xs flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold uppercase tracking-wider">
               <Camera className="w-5 h-5 mb-1" />
               <span>Modifier</span>
@@ -84,7 +84,7 @@ export default function UserProfileBlock({ profile, onUpdateProfile, editable = 
         </div>
 
         {/* Floating small Upload icon badge */}
-        {editable && !isGoogle && (
+        {editable && (
           <button 
             onClick={() => fileInputRef.current?.click()}
             className="absolute bottom-0 right-0 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-lg border border-white dark:border-stone-900 cursor-pointer"

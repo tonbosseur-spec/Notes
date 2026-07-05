@@ -15,35 +15,16 @@ import Home from './components/Home';
 import Settings from './components/Settings';
 import RudiChat from './components/RudiChat';
 import TasksView from './components/TasksView';
-import LoginScreen from './components/LoginScreen';
-import FirstTimeProfileModal from './components/FirstTimeProfileModal';
+import GraphView from './components/GraphView';
 import { get, set } from 'idb-keyval';
-import { auth } from './lib/firebase';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { 
-  saveNoteToCloud, 
-  deleteNoteFromCloud, 
-  saveGroupToCloud, 
-  deleteGroupFromCloud, 
-  saveTaskToCloud, 
-  deleteTaskFromCloud, 
-  saveTaskListToCloud, 
-  deleteTaskListFromCloud, 
-  mergeLocalAndCloud,
-  exportToNts,
-  saveProfileToCloud,
-  fetchNotesFromCloud,
-  fetchGroupsFromCloud,
-  fetchTasksFromCloud,
-  fetchTaskListsFromCloud
-} from './lib/sync';
+import { exportToNts } from './lib/sync';
 
-type ViewState = 'home' | 'notes' | 'settings' | 'tasks';
+type ViewState = 'home' | 'notes' | 'settings' | 'tasks' | 'graph';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('home');
   const [notes, setNotes] = useState<Note[]>([]);
-  const [settings, setSettings] = useState<AppSettings>({ theme: 'system', apiKey: '', enableNotifications: true, authChoice: null, geminiModel: 'gemini-3.5-flash' });
+  const [settings, setSettings] = useState<AppSettings>({ theme: 'system', apiKey: '', enableNotifications: true, authChoice: 'local', geminiModel: 'gemini-3.5-flash' });
   const [groups, setGroups] = useState<NoteGroup[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
@@ -53,9 +34,6 @@ export default function App() {
 
   // User Profile state
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-
-  // Firebase Auth and Live Sync State
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Rudi Chat state
   const [isRudiOpen, setIsRudiOpen] = useState(false);
@@ -153,6 +131,70 @@ export default function App() {
     }
   }, [notes, settings, groups, chatThreads, tasks, taskLists, userProfile, isLoading]);
 
+  useEffect(() => {
+    const handleOpenOrCreateNote = (e: Event) => {
+      const customEvent = e as CustomEvent<{title: string}>;
+      const title = customEvent.detail.title;
+      if (!title) return;
+      
+      const titleLower = title.toLowerCase();
+      const existingNote = notes.find(n => n.title.toLowerCase() === titleLower || n.id === title);
+      
+      if (existingNote) {
+        setActiveNoteId(existingNote.id);
+      } else {
+        const newNote: Note = {
+          id: generateUUID(),
+          title: title,
+          content: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setNotes(prev => [newNote, ...prev]);
+        setActiveNoteId(newNote.id);
+      }
+      setView('notes');
+    };
+
+    const handleOpenOrCreateTask = (e: Event) => {
+      const customEvent = e as CustomEvent<{title: string}>;
+      const title = customEvent.detail.title;
+      if (!title) return;
+      
+      const titleLower = title.toLowerCase();
+      const existingTask = tasks.find(t => t.title.toLowerCase() === titleLower || t.id === title);
+      
+      if (!existingTask) {
+        const listId = taskLists.length > 0 ? taskLists[0].id : generateUUID();
+        if (taskLists.length === 0) {
+          const newList: TaskList = { id: listId, name: 'Tâches', createdAt: Date.now() };
+          setTaskLists(prev => [...prev, newList]);
+        }
+        const newTask: Task = {
+          id: generateUUID(),
+          listId: listId,
+          title: title,
+          details: '',
+          dueDate: null,
+          subTasks: [],
+          completed: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setTasks(prev => [...prev, newTask]);
+      }
+      setView('tasks');
+    };
+
+    window.addEventListener('open-or-create-note', handleOpenOrCreateNote);
+    window.addEventListener('open-or-create-task', handleOpenOrCreateTask);
+    
+    return () => {
+      window.removeEventListener('open-or-create-note', handleOpenOrCreateNote);
+      window.removeEventListener('open-or-create-task', handleOpenOrCreateTask);
+    };
+  }, [notes, tasks, taskLists]);
+
   // Apply theme
   useEffect(() => {
     const root = window.document.documentElement;
@@ -170,121 +212,22 @@ export default function App() {
     }
   }, [settings.theme, settings.colorPalette]);
 
-  // Firebase Authentication State Listener & Sync
-  useEffect(() => {
-    if (isLoading) return;
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-
-      if (user) {
-        if (settings.authChoice !== 'cloud') {
-          setSettings(prev => ({ ...prev, authChoice: 'cloud' }));
-        }
-
-        // Set up User Profile
-        const isGoogle = user.providerData?.some(p => p.providerId === 'google.com') || false;
-        if (isGoogle) {
-          const displayName = user.displayName || '';
-          const parts = displayName.trim().split(/\s+/);
-          const fName = parts[0] || 'Utilisateur';
-          const lName = parts.slice(1).join(' ') || '';
-          const photoUrl = user.photoURL || null;
-
-          const googleProfile: UserProfile = {
-            firstName: fName,
-            lastName: lName,
-            photoUrl,
-            isGoogle: true
-          };
-          setUserProfile(googleProfile);
-          set('userProfile', googleProfile);
-          await saveProfileToCloud(user.uid, googleProfile);
-        }
-
-        try {
-          // Fetch initial remote data from Cloud SQL API
-          const [remoteNotes, remoteGroups, remoteTasks, remoteTaskLists] = await Promise.all([
-            fetchNotesFromCloud(),
-            fetchGroupsFromCloud(),
-            fetchTasksFromCloud(),
-            fetchTaskListsFromCloud()
-          ]);
-
-          // Merge local and remote
-          const mergedNotes = mergeLocalAndCloud(notes, remoteNotes);
-          const mergedGroups = mergeLocalAndCloud(groups, remoteGroups);
-          const mergedTasks = mergeLocalAndCloud(tasks, remoteTasks);
-          const mergedTaskLists = mergeLocalAndCloud(taskLists, remoteTaskLists);
-
-          // Update local state
-          setNotes(mergedNotes.merged);
-          setGroups(mergedGroups.merged);
-          setTasks(mergedTasks.merged);
-          setTaskLists(mergedTaskLists.merged);
-
-          if (mergedNotes.merged.length > 0) {
-            setActiveNoteId(mergedNotes.merged[0].id);
-          }
-
-          // Upload newer local items to cloud
-          mergedNotes.toUpload.forEach(n => saveNoteToCloud(user.uid, n));
-          mergedGroups.toUpload.forEach(g => saveGroupToCloud(user.uid, g));
-          mergedTasks.toUpload.forEach(t => saveTaskToCloud(user.uid, t));
-          mergedTaskLists.toUpload.forEach(l => saveTaskListToCloud(user.uid, l));
-
-        } catch (err) {
-          console.error("Error during initial Cloud synchronization:", err);
-        }
-      } else {
-        if (settings.authChoice === 'cloud') {
-          setSettings(prev => ({ ...prev, authChoice: null }));
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [currentUser === null, isLoading]);
-
-  // Auth helper handlers
-  const handleLoginChoice = (uid: string | null) => {
-    if (uid) {
-      setSettings(prev => ({ ...prev, authChoice: 'cloud' }));
-    } else {
-      setSettings(prev => ({ ...prev, authChoice: 'local' }));
-    }
-    setView('home');
-  };
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-    setSettings(prev => ({ ...prev, authChoice: null }));
-    setCurrentUser(null);
-    setUserProfile(null);
-    set('userProfile', null);
-    setView('home');
-  };
-
-  const handleSaveFirstTimeProfile = async (profileData: { firstName: string; lastName: string; photoUrl: string | null }) => {
-    const newProfile: UserProfile = {
-      ...profileData,
-      isGoogle: false
-    };
-    setUserProfile(newProfile);
-    set('userProfile', newProfile);
-    if (currentUser) {
-      await saveProfileToCloud(currentUser.uid, newProfile);
-    }
-  };
-
   const handleUpdateUserProfile = async (updates: Partial<UserProfile>) => {
-    if (!userProfile) return;
+    if (!userProfile) {
+      const newProfile: UserProfile = {
+        firstName: updates.firstName || '',
+        lastName: updates.lastName || '',
+        photoUrl: updates.photoUrl || null,
+        isGoogle: false,
+        ...updates
+      };
+      setUserProfile(newProfile);
+      set('userProfile', newProfile);
+      return;
+    }
     const updatedProfile = { ...userProfile, ...updates };
     setUserProfile(updatedProfile);
     set('userProfile', updatedProfile);
-    if (currentUser && !userProfile.isGoogle) {
-      await saveProfileToCloud(currentUser.uid, updatedProfile);
-    }
   };
 
   // State modifiers with Firestore backup triggers
@@ -299,9 +242,6 @@ export default function App() {
     setNotes([newNote, ...notes]);
     setActiveNoteId(newNote.id);
     setView('notes');
-    if (currentUser) {
-      saveNoteToCloud(currentUser.uid, newNote);
-    }
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
@@ -314,7 +254,6 @@ export default function App() {
             if (taskLists.length === 0) {
               const newList: TaskList = { id: listId, name: 'Tâches', createdAt: Date.now() };
               setTaskLists(prev => [...prev, newList]);
-              if (currentUser) saveTaskListToCloud(currentUser.uid, newList);
             }
             
             const newTask: Task = {
@@ -331,12 +270,8 @@ export default function App() {
             };
             nextNote.linkedTaskId = newTask.id;
             setTasks(prev => [...prev, newTask]);
-            if (currentUser) saveTaskToCloud(currentUser.uid, newTask);
         }
 
-        if (currentUser) {
-          saveNoteToCloud(currentUser.uid, nextNote);
-        }
         return nextNote;
       }
       return note;
@@ -349,9 +284,6 @@ export default function App() {
     if (activeNoteId === id) {
       setActiveNoteId(null);
     }
-    if (currentUser) {
-      deleteNoteFromCloud(currentUser.uid, id);
-    }
   };
 
   const handleDeleteNotes = (ids: string[]) => {
@@ -360,26 +292,17 @@ export default function App() {
     if (activeNoteId && ids.includes(activeNoteId)) {
       setActiveNoteId(null);
     }
-    if (currentUser) {
-      ids.forEach(id => deleteNoteFromCloud(currentUser.uid, id));
-    }
   };
 
   const handleAddGroup = (name: string) => {
     const newId = generateUUID();
     const newGroup = { id: newId, name };
     setGroups([...groups, newGroup]);
-    if (currentUser) {
-      saveGroupToCloud(currentUser.uid, newGroup);
-    }
     return newId;
   };
 
   const handleDeleteGroup = (id: string) => {
     setGroups(groups.filter(g => g.id !== id));
-    if (currentUser) {
-      deleteGroupFromCloud(currentUser.uid, id);
-    }
   };
 
   const handleRudiCreateNote = (title: string, content: string, groupName?: string) => {
@@ -392,9 +315,6 @@ export default function App() {
           const newGroup = { id: generateUUID(), name: groupName };
           newGroups.push(newGroup);
           groupId = newGroup.id;
-          if (currentUser) {
-            saveGroupToCloud(currentUser.uid, newGroup);
-          }
         } else {
           groupId = group.id;
         }
@@ -410,9 +330,6 @@ export default function App() {
           updatedAt: Date.now(),
           groupId
         };
-        if (currentUser) {
-          saveNoteToCloud(currentUser.uid, newNote);
-        }
         return [...prevNotes, newNote];
       });
 
@@ -436,9 +353,6 @@ export default function App() {
               const newGroup = { id: generateUUID(), name: assignment.groupName };
               currentGroups.push(newGroup);
               groupId = newGroup.id;
-              if (currentUser) {
-                saveGroupToCloud(currentUser.uid, newGroup);
-              }
             } else {
               groupId = group.id;
             }
@@ -449,9 +363,6 @@ export default function App() {
           if (noteIndex >= 0) {
             const updatedNote = { ...currentNotes[noteIndex], groupId, updatedAt: Date.now() };
             currentNotes[noteIndex] = updatedNote;
-            if (currentUser) {
-              saveNoteToCloud(currentUser.uid, updatedNote);
-            }
           }
         }
         return currentNotes;
@@ -466,9 +377,6 @@ export default function App() {
       prevNotes.map(n => {
         if (n.id === noteId) {
           const updatedNote = { ...n, title: newTitle, updatedAt: Date.now() };
-          if (currentUser) {
-            saveNoteToCloud(currentUser.uid, updatedNote);
-          }
           return updatedNote;
         }
         return n;
@@ -484,9 +392,6 @@ export default function App() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
-      if (currentUser) {
-        saveNoteToCloud(currentUser.uid, created);
-      }
       return created;
     });
     setNotes(prev => [...newNotes, ...prev]);
@@ -495,26 +400,14 @@ export default function App() {
   const handleAddTaskList = (name: string, color?: string) => {
     const newList: TaskList = { id: generateUUID(), name, color, createdAt: Date.now() };
     setTaskLists(prev => [...prev, newList]);
-    if (currentUser) {
-      saveTaskListToCloud(currentUser.uid, newList);
-    }
   };
 
   const handleRenameTaskList = (listId: string, newName: string) => {
     setTaskLists(prev => prev.map(l => l.id === listId ? { ...l, name: newName } : l));
-    if (currentUser) {
-      const list = taskLists.find(l => l.id === listId);
-      if (list) {
-        saveTaskListToCloud(currentUser.uid, { ...list, name: newName });
-      }
-    }
   };
 
   const handleUpdateTaskListsOrder = (updatedLists: TaskList[]) => {
     setTaskLists(updatedLists);
-    if (currentUser) {
-      updatedLists.forEach(l => saveTaskListToCloud(currentUser.uid, l));
-    }
   };
 
   const handleAddTask = (listId: string, title: string, priority: 'high' | 'medium' | 'low' = 'medium') => {
@@ -531,9 +424,6 @@ export default function App() {
       updatedAt: Date.now()
     };
     setTasks(prev => [...prev, newTask]);
-    if (currentUser) {
-      saveTaskToCloud(currentUser.uid, newTask);
-    }
   };
 
   const handleRudiModifyNote = (noteId: string, content: string) => {
@@ -546,9 +436,6 @@ export default function App() {
       listId = generateUUID();
       const newList = { id: listId, name: listName, createdAt: Date.now() };
       setTaskLists(prev => [...prev, newList]);
-      if (currentUser) {
-        saveTaskListToCloud(currentUser.uid, newList);
-      }
     }
     const newTask: Task = {
       id: generateUUID(),
@@ -563,9 +450,6 @@ export default function App() {
       updatedAt: Date.now()
     };
     setTasks(prev => [...prev, newTask]);
-    if (currentUser) {
-      saveTaskToCloud(currentUser.uid, newTask);
-    }
   };
 
   const handleUpdateTask = (id: string, updates: Partial<Task>) => {
@@ -575,9 +459,6 @@ export default function App() {
         if ('dueDate' in updates && updates.dueDate !== t.dueDate) {
           nextTask.notified = false;
         }
-        if (currentUser) {
-          saveTaskToCloud(currentUser.uid, nextTask);
-        }
         return nextTask;
       }
       return t;
@@ -586,30 +467,16 @@ export default function App() {
 
   const handleDeleteTask = (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
-    if (currentUser) {
-      deleteTaskFromCloud(currentUser.uid, id);
-    }
   };
 
   const handleDeleteTaskList = (listId: string) => {
     setTaskLists(prev => prev.filter(l => l.id !== listId));
-    const tasksToDelete = tasks.filter(t => t.listId === listId);
     setTasks(prev => prev.filter(t => t.listId !== listId));
-    if (currentUser) {
-      deleteTaskListFromCloud(currentUser.uid, listId);
-      tasksToDelete.forEach(t => deleteTaskFromCloud(currentUser.uid, t.id));
-    }
   };
 
   const handleMergeLists = (sourceListId: string, targetListId: string) => {
     setTasks(prev => prev.map(t => t.listId === sourceListId ? { ...t, listId: targetListId } : t));
     setTaskLists(prev => prev.filter(l => l.id !== sourceListId));
-    if (currentUser) {
-      deleteTaskListFromCloud(currentUser.uid, sourceListId);
-      tasks.filter(t => t.listId === sourceListId).forEach(t => {
-          saveTaskToCloud(currentUser.uid, { ...t, listId: targetListId });
-      });
-    }
   };
 
   // .nts Backup Handlers
@@ -635,18 +502,8 @@ export default function App() {
     setTasks(data.tasks);
     setTaskLists(data.taskLists);
     
-    const nextSettings = { ...settings, ...data.settings, authChoice: currentUser ? 'cloud' : 'local' };
+    const nextSettings = { ...settings, ...data.settings, authChoice: 'local' };
     setSettings(nextSettings);
-
-    // If logged in, upload all these imported documents to cloud database
-    if (currentUser) {
-      await Promise.all([
-        ...data.notes.map(n => saveNoteToCloud(currentUser.uid, n)),
-        ...data.groups.map(g => saveGroupToCloud(currentUser.uid, g)),
-        ...data.tasks.map(t => saveTaskToCloud(currentUser.uid, t)),
-        ...data.taskLists.map(l => saveTaskListToCloud(currentUser.uid, l))
-      ]);
-    }
   };
 
   // Local task notifications scheduler
@@ -729,23 +586,10 @@ export default function App() {
     );
   }
 
-  // Show login screen at the very first launch if no authChoice is chosen
-  if (!settings.authChoice) {
-    return <LoginScreen onLoginSuccess={handleLoginChoice} />;
-  }
-
   const rudiContextId = view === 'notes' && activeNoteId ? activeNoteId : 'general';
-
-  const shouldShowFirstTime = !isLoading && 
-                              settings.authChoice !== null && 
-                              !userProfile && 
-                              !(currentUser?.providerData?.some(p => p.providerId === 'google.com'));
 
   return (
     <>
-      {shouldShowFirstTime && (
-        <FirstTimeProfileModal onSave={handleSaveFirstTimeProfile} />
-      )}
       {view === 'home' && (
         <Home 
           onNavigate={(v) => {
@@ -775,11 +619,6 @@ export default function App() {
           userProfile={userProfile}
           onUpdateUserProfile={handleUpdateUserProfile}
           
-          currentUser={currentUser}
-          onSignOut={handleSignOut}
-          onSignInWithCloud={() => {
-            setSettings(prev => ({ ...prev, authChoice: null }));
-          }}
           onExportNts={handleExportNts}
           onImportNts={handleImportNts}
         />
@@ -788,6 +627,7 @@ export default function App() {
       {view === 'notes' && (
         <NotesView 
           notes={notes}
+          tasks={tasks}
           activeNoteId={activeNoteId}
           apiKey={settings.apiKey}
           geminiModel={settings.geminiModel}
@@ -812,6 +652,8 @@ export default function App() {
           onAddTask={handleAddTask}
           onUpdateTask={handleUpdateTask}
           onDeleteTask={handleDeleteTask}
+          onRenameTaskList={handleRenameTaskList}
+          onDeleteTaskList={handleDeleteTaskList}
           onGoHome={() => setView('home')}
           onOpenRudi={() => setIsRudiOpen(true)}
           onUpdateTaskListsOrder={handleUpdateTaskListsOrder}
@@ -819,6 +661,17 @@ export default function App() {
             setActiveNoteId(noteId);
             setView('notes');
           }}
+        />
+      )}
+
+      {view === 'graph' && (
+        <GraphView 
+          notes={notes}
+          onOpenNote={(noteId) => {
+            setActiveNoteId(noteId);
+            setView('notes');
+          }}
+          onClose={() => setView('home')}
         />
       )}
 
